@@ -439,6 +439,7 @@ def test_gpw_forwards_explicit_earthdata_token_without_exposing_it(
     with ZipFile(archive, "w") as output:
         output.write(fixture, arcname=f"folder/{member}")
     token = "caller-earthdata-token"
+    expected_authorization = "Bearer " + token
     received_authorization: list[bool] = []
 
     def download_archive(
@@ -451,7 +452,9 @@ def test_gpw_forwards_explicit_earthdata_token_without_exposing_it(
         publisher_checksum,
     ):
         del url, max_bytes, exact_bytes, publisher_checksum
-        received_authorization.append(headers == {"Authorization": f"Bearer {token}"})
+        received_authorization.append(
+            headers == {"Authorization": expected_authorization}
+        )
         partial_path.write_bytes(archive.read_bytes())
         return DownloadResult(
             size=partial_path.stat().st_size,
@@ -480,7 +483,9 @@ def test_gpw_forwards_explicit_earthdata_token_without_exposing_it(
         publisher_checksum,
     ):
         del url, partial_path, max_bytes, exact_bytes, publisher_checksum
-        received_authorization.append(headers == {"Authorization": f"Bearer {token}"})
+        received_authorization.append(
+            headers == {"Authorization": expected_authorization}
+        )
         raise ValueError("publisher rejected the request")
 
     monkeypatch.setattr(_api, "download_file", reject_download)
@@ -937,6 +942,7 @@ def test_earthdata_environment_token_is_forwarded(
     with ZipFile(archive, "w") as output:
         output.write(fixture, arcname=member)
     token = "environment-earthdata-token"
+    expected_authorization = "Bearer " + token
     received_authorization: list[bool] = []
 
     def download_archive(
@@ -949,7 +955,9 @@ def test_earthdata_environment_token_is_forwarded(
         publisher_checksum,
     ):
         del url, max_bytes, exact_bytes, publisher_checksum
-        received_authorization.append(headers == {"Authorization": f"Bearer {token}"})
+        received_authorization.append(
+            headers == {"Authorization": expected_authorization}
+        )
         partial_path.write_bytes(archive.read_bytes())
         return DownloadResult(
             size=partial_path.stat().st_size,

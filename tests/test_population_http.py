@@ -477,7 +477,8 @@ def test_head_failure_disables_resume_and_restarts(
 
 def test_redirect_handler_removes_cross_host_authorization() -> None:
     handler = _http._SafeRedirectHandler()
-    authorization = "Bearer redirect-test-token"
+    token = "redirect-test-token"
+    authorization = "Bearer " + token
     request = Request(
         "https://data.earthdata.nasa.gov/file",
         headers={"Authorization": authorization},

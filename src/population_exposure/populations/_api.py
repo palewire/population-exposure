@@ -522,7 +522,8 @@ def _authentication_headers(
             "for the request and is never stored or logged."
         )
     token = token.strip()
-    return {"Authorization": f"Bearer {token}"}
+    authorization = "Bearer " + token
+    return {"Authorization": authorization}
 
 
 def _extract_member(archive_path: Path, output_path: Path, expected: str) -> None:
