@@ -29,7 +29,7 @@ install-test: ## Install dependencies for tests
 	$(UV) sync --group test --locked $(if $(UV_PYTHON),--python $(UV_PYTHON))
 
 install-docs: ## Install dependencies for documentation
-	$(UV) sync --group docs --locked
+	$(UV) sync --group docs --locked $(if $(UV_PYTHON),--python $(UV_PYTHON))
 
 all: verify ## Run the complete verification suite
 

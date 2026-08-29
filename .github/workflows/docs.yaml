@@ -40,11 +40,11 @@ jobs:
 
       - id: install-python-dependencies
         name: Install Python dependencies
-        run: make install-docs
+        run: make install-docs UV_PYTHON=3.13
 
       - id: build-sphinx-documentation
         name: Build Sphinx documentation
-        run: make docs-check
+        run: make docs-check UV_PYTHON=3.13
 
       - name: Prune uv cache
         run: uv cache prune --ci
@@ -79,10 +79,10 @@ jobs:
         run: uv python install 3.13
 
       - name: Install Python dependencies
-        run: make install-docs
+        run: make install-docs UV_PYTHON=3.13
 
       - name: Check documentation links
-        run: make linkcheck
+        run: make linkcheck UV_PYTHON=3.13
 
       - name: Prune uv cache
         run: uv cache prune --ci
