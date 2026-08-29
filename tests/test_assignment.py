@@ -50,7 +50,9 @@ def test_tabular_parameters_remain_in_the_public_signature() -> None:
         "population_column",
     ]
     assert parameters["cell_columns"].default == ("longitude", "latitude")
+    assert parameters["cell_columns"].annotation == "str | Sequence[str]"
     assert parameters["population_column"].default == "population"
+    assert "gpd.GeoDataFrame" in parameters["hazard"].annotation
 
 
 def test_assigns_population_and_preserves_input_structure() -> None:

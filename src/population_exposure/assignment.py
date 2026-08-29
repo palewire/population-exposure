@@ -37,7 +37,7 @@ def assign_population(
     hazard: gpd.GeoDataFrame,
     population: RasterSource,
     *,
-    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
     allow_overlaps: bool = False,
     hazard_band: int | None = None,
@@ -63,7 +63,7 @@ def assign_population(
     hazard: DatasetReader,
     population: RasterSource,
     *,
-    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
     allow_overlaps: bool = False,
     hazard_band: int | None = None,
@@ -76,7 +76,7 @@ def assign_population(
     hazard: str | PathLike[str],
     population: RasterSource,
     *,
-    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
     allow_overlaps: bool = False,
     hazard_band: int | None = None,
@@ -85,10 +85,10 @@ def assign_population(
 
 
 def assign_population(
-    hazard: pd.DataFrame | str | PathLike[str] | DatasetReader,
+    hazard: pd.DataFrame | gpd.GeoDataFrame | str | PathLike[str] | DatasetReader,
     population: pd.DataFrame | RasterSource,
     *,
-    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
     allow_overlaps: bool = False,
     hazard_band: int | None = None,
@@ -184,7 +184,7 @@ def _assign_tabular_population(
     hazard: pd.DataFrame,
     population: pd.DataFrame,
     *,
-    cell_columns: Sequence[str],
+    cell_columns: str | Sequence[str],
     population_column: str,
 ) -> pd.DataFrame:
     """Assign population to tabular hazard rows by exact keys."""
