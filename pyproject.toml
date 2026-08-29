@@ -34,7 +34,7 @@ classifiers = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/palewire/population-exposure#readme"
+Documentation = "https://palewi.re/docs/population-exposure/"
 Source = "https://github.com/palewire/population-exposure"
 Issues = "https://github.com/palewire/population-exposure/issues"
 
@@ -56,6 +56,14 @@ test = [
     "pytest-cov",
     "hypothesis",
     "pytest-timeout",
+]
+docs = [
+    "sphinx",
+    "sphinx-autobuild",
+    "sphinxcontrib-mermaid",
+    "sphinx-copybutton",
+    "myst-parser",
+    "sphinx-palewire-theme>=0.1.10",
 ]
 
 [tool.setuptools.package-dir]

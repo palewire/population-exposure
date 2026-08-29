@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   matches shuffled native cells and independently published one-degree totals.
 - Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
   and an explicit source-checked regeneration script.
+- Add a single-page Sphinx documentation site, published at
+  https://palewi.re/docs/population-exposure/.
 - Add `assign_population()` for joining population values to tabular hazard rows
   by exact cell keys.
 - Extend `assign_population()` to GeoDataFrames, common vector paths, GeoTIFFs,
