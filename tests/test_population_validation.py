@@ -204,6 +204,9 @@ def test_receipt_validation_rejects_every_stale_shape(
         selection=info.selection,
     )
     assert json.loads(receipt.read_text())["observed"]["nodata"] == "NaN"
+    assert original["_verified_ctime_ns"] == raster.stat().st_ctime_ns
+    assert original["_verified_device"] == raster.stat().st_dev
+    assert original["_verified_inode"] == raster.stat().st_ino
 
     for changed in (
         [],
@@ -211,6 +214,9 @@ def test_receipt_validation_rejects_every_stale_shape(
         {**original, "local_sha256": "bad"},
         {**original, "local_size_bytes": -1},
         {**original, "_verified_mtime_ns": -1},
+        {**original, "_verified_ctime_ns": -1},
+        {**original, "_verified_device": -1},
+        {**original, "_verified_inode": -1},
     ):
         receipt.write_text(json.dumps(changed))
         assert (

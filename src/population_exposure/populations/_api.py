@@ -29,7 +29,10 @@ from population_exposure.populations._raster import (
     observed_raster_facts,
     validate_catalog_raster,
 )
-from population_exposure.populations._selection import parse_selection
+from population_exposure.populations._selection import (
+    looks_like_selection,
+    parse_selection,
+)
 from population_exposure.populations._sources import SOURCES
 
 if TYPE_CHECKING:
@@ -224,17 +227,17 @@ def resolve_for_assignment(population: RasterSource) -> ResolvedPopulation:
     if isinstance(population, DatasetReader):
         return ResolvedPopulation(population, MappingProxyType({}))
     if isinstance(population, os.PathLike):
-        path = Path(population)
+        path = Path(population).expanduser()
         if not path.is_file():
             raise ValueError(
                 f"population raster path does not exist or is not a file: {path}."
             )
         return ResolvedPopulation(path, _metadata_from_adjacent_receipt(path))
     if isinstance(population, str):
-        path = Path(population)
+        path = Path(population).expanduser()
         if path.is_file():
             return ResolvedPopulation(path, _metadata_from_adjacent_receipt(path))
-        if ":" in population or population in SOURCES:
+        if looks_like_selection(population):
             downloaded = download(population)
             return ResolvedPopulation(
                 downloaded,

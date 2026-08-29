@@ -135,7 +135,11 @@ once.
 Downloads stream to a same-directory partial file, enforce size limits, resume
 only after the server advertises and correctly accepts byte ranges, verify
 publisher checksums where supplied, and replace the final path only after
-validation. A verified cache entry is reused unless `refresh=True`.
+validation. SHA-256 is computed when bytes are installed or refreshed. Later
+cache checks use the recorded size and file identity/change timestamps so
+multi-gigabyte files are not rehashed on every call; assignment still validates
+the raster structure and values. A verified cache entry is reused unless
+`refresh=True`.
 
 ```python
 path = populations.download(

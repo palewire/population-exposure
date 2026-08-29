@@ -11,6 +11,11 @@ _SELECTION_PATTERN = re.compile(
 )
 
 
+def looks_like_selection(value: str) -> bool:
+    """Return whether a string uses the catalog's exact public grammar."""
+    return value in SOURCES or _SELECTION_PATTERN.fullmatch(value) is not None
+
+
 def parse_selection(selection: str) -> tuple[SourceSpec, int]:
     """Parse and validate one exact ``source:year`` selection."""
     if not isinstance(selection, str):

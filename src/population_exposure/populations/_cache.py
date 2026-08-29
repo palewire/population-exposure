@@ -13,8 +13,6 @@ from typing import TYPE_CHECKING
 
 from platformdirs import user_cache_path
 
-from population_exposure.populations._http import sha256_file
-
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -112,7 +110,11 @@ def verified_receipt(
         return None
     if typed_data.get("_verified_mtime_ns") != stat.st_mtime_ns:
         return None
-    if sha256_file(raster) != sha256:
+    if typed_data.get("_verified_ctime_ns") != stat.st_ctime_ns:
+        return None
+    if typed_data.get("_verified_device") != stat.st_dev:
+        return None
+    if typed_data.get("_verified_inode") != stat.st_ino:
         return None
     return typed_data
 
@@ -142,6 +144,9 @@ def write_receipt(
         "local_sha256": sha256,
         "local_size_bytes": stat.st_size,
         "_verified_mtime_ns": stat.st_mtime_ns,
+        "_verified_ctime_ns": stat.st_ctime_ns,
+        "_verified_device": stat.st_dev,
+        "_verified_inode": stat.st_ino,
         "observed": dict(observed),
         "units": info.units,
         "population_meaning": info.meaning,

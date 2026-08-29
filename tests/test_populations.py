@@ -620,6 +620,7 @@ def test_catalog_selection_attrs_are_attached_to_vector_results(
 
 def test_existing_paths_win_and_missing_pathlike_values_do_not_become_selections(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     unusual = write_population(tmp_path / "worldpop-global-1km:2020")
     hazard = write_population(
@@ -634,6 +635,19 @@ def test_existing_paths_win_and_missing_pathlike_values_do_not_become_selections
         assign_population(hazard, Path("worldpop-global-1km:2020"))
     with pytest.raises(ValueError, match="path does not exist"):
         assign_population(hazard, "missing-population.tif")
+    with pytest.raises(ValueError, match=r"C:\\data\\population.tif"):
+        assign_population(hazard, r"C:\data\population.tif")
+    with pytest.raises(ValueError, match="https:/"):
+        assign_population(hazard, "https://example.test/population.tif")
+
+    home = tmp_path / "home"
+    home.mkdir()
+    home_population = write_population(home / "population.tif")
+    monkeypatch.setenv("HOME", str(home))
+    expanded = _api.resolve_for_assignment("~/population.tif")
+    assert expanded.source == home_population
+    expanded_pathlike = _api.resolve_for_assignment(Path("~/population.tif"))
+    assert expanded_pathlike.source == home_population
 
 
 def test_concurrent_downloads_install_one_cache_entry(

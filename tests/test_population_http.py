@@ -198,7 +198,8 @@ def test_invalid_advertised_sizes_fail_without_installing(
     message: str,
 ) -> None:
     partial = tmp_path / "file.partial"
-    response_sequence(monkeypatch, [FakeResponse(b"x", headers=headers)], [])
+    response = FakeResponse(b"x", headers=headers)
+    response_sequence(monkeypatch, [response], [])
 
     with pytest.raises(ValueError, match=message):
         _http.download_file(
@@ -210,6 +211,29 @@ def test_invalid_advertised_sizes_fail_without_installing(
             publisher_checksum=None,
         )
 
+    assert not partial.exists()
+    assert response.closed
+
+
+def test_invalid_content_length_closes_response_and_removes_stale_partial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    partial = tmp_path / "file.partial"
+    partial.write_bytes(b"stale")
+    response = FakeResponse(b"x", headers={"Content-Length": "invalid"})
+    response_sequence(monkeypatch, [response], [])
+
+    with pytest.raises(ValueError, match="invalid Content-Length"):
+        _http._fresh_download(
+            "https://example.test/file",
+            partial,
+            request_headers={},
+            max_bytes=100,
+            exact_bytes=None,
+        )
+
+    assert response.closed
     assert not partial.exists()
 
 

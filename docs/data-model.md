@@ -85,6 +85,10 @@ Automatic sources stream official files to a partial path and install only
 after source-specific grid, count, year, value, size, and checksum checks.
 Verified cache entries are grouped by source, release, and year. Adjacent JSON
 receipts identify the installed bytes. Offline mode never makes a network call.
+SHA-256 is computed at installation and refresh. Unchanged cache hits compare
+the receipt's size and file identity/change timestamps instead of rereading
+multi-gigabyte files; assignment separately validates raster structure and
+population values.
 
 Chambers annual rasters are derived by reading one requested year's 21 age
 bands from the shared NetCDF-4 source in bounded windows. LandScan is never

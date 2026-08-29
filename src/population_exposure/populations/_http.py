@@ -229,7 +229,13 @@ def _fresh_download(
             f"Official download returned unexpected HTTP status {response.status}."
         )
 
-    content_length = _content_length(response.headers)
+    try:
+        content_length = _content_length(response.headers)
+    except ValueError:
+        response.close()
+        if partial_path.exists():
+            partial_path.unlink()
+        raise
     if content_length is not None and (
         content_length > max_bytes
         or (exact_bytes is not None and content_length != exact_bytes)
