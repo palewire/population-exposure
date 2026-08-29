@@ -288,7 +288,7 @@ def _download_raster(
     """Download a direct GeoTIFF or one exact GeoTIFF from a publisher ZIP."""
     headers = _authentication_headers(source, earthdata_token)
     if source.delivery == "geotiff":
-        download_file(
+        result = download_file(
             selected.official_url,
             partial_path,
             headers=headers,
@@ -303,7 +303,7 @@ def _download_raster(
                 selected.year,
                 require_year_marker=False,
             )
-            sha256 = sha256_file(partial_path)
+            sha256 = result.sha256
         except (OSError, ValueError):
             _remove_if_file(partial_path)
             raise
@@ -509,7 +509,11 @@ def _authentication_headers(
     """Return a transient authorization header only for the Earthdata source."""
     if source.acquisition != "earthdata":
         return None
-    token = earthdata_token or os.environ.get(_EARTHDATA_TOKEN_ENV)
+    token = (
+        earthdata_token
+        if earthdata_token is not None
+        else os.environ.get(_EARTHDATA_TOKEN_ENV)
+    )
     if token is None or not token.strip():
         raise ValueError(
             "GPWv4 requires your Earthdata token. Pass earthdata_token=... or set "
@@ -517,6 +521,7 @@ def _authentication_headers(
             "count GeoTIFF and call populations.register(). The token is used only "
             "for the request and is never stored or logged."
         )
+    token = token.strip()
     return {"Authorization": f"Bearer {token}"}
 
 

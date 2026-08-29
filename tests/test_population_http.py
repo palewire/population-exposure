@@ -477,9 +477,10 @@ def test_head_failure_disables_resume_and_restarts(
 
 def test_redirect_handler_removes_cross_host_authorization() -> None:
     handler = _http._SafeRedirectHandler()
+    authorization = "Bearer redirect-test-token"
     request = Request(
         "https://data.earthdata.nasa.gov/file",
-        headers={"Authorization": "Bearer private"},
+        headers={"Authorization": authorization},
     )
     headers = Message()
 
@@ -503,7 +504,8 @@ def test_redirect_handler_removes_cross_host_authorization() -> None:
         "https://data.earthdata.nasa.gov/other",
     )
     assert same_host is not None
-    assert same_host.get_header("Authorization") == "Bearer private"
+    authorization_is_preserved = same_host.get_header("Authorization") == authorization
+    assert authorization_is_preserved
 
 
 def test_short_exact_download_is_retained_for_resume(
