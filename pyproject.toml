@@ -128,6 +128,8 @@ docstring-code-format = true
 addopts = [
     "--strict-config",
     "--strict-markers",
+    "-m",
+    "not live",
     "--durations=10",
     "--durations-min=1.0",
 ]
@@ -140,6 +142,7 @@ markers = [
     "component: Component tests",
     "integration: Integration tests",
     "e2e: End-to-end tests",
+    "live: Real downloads from official population data providers",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:pandas.*",

@@ -1,0 +1,78 @@
+name: Live population downloads
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider coverage to download and validate
+        required: true
+        default: scheduled
+        type: choice
+        options:
+          - scheduled
+          - worldpop-global-1km
+          - ghsl-r2023a-mollweide-1km
+          - gpwv4-r11-count
+          - chambers-hybrid
+          - all
+  schedule:
+    - cron: "17 5 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-population-downloads
+  cancel-in-progress: false
+
+jobs:
+  live-downloads:
+    name: Download ${{ inputs.provider || 'scheduled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
+      POPULATION_EXPOSURE_LIVE_PROVIDERS: ${{ inputs.provider || 'scheduled' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.10.7"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install test dependencies
+        run: make install-test UV_PYTHON=3.13
+
+      - name: Require Earthdata credentials when requested
+        shell: bash
+        run: |
+          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "gpwv4-r11-count" || "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "all" ]] && [[ -z "$EARTHDATA_TOKEN" ]]; then
+            echo "::error title=Missing EARTHDATA_TOKEN::Manual GPW coverage requires the EARTHDATA_TOKEN repository secret."
+            exit 1
+          fi
+
+      - name: Confirm runner disk space
+        shell: bash
+        run: |
+          required_kb=8000000
+          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "chambers-hybrid" || "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "all" ]]; then
+            required_kb=20000000
+          fi
+          available_kb=$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 { print $4 }')
+          if (( available_kb < required_kb )); then
+            echo "::error title=Insufficient disk space::Need ${required_kb} KB free for $POPULATION_EXPOSURE_LIVE_PROVIDERS; found ${available_kb} KB."
+            exit 1
+          fi
+
+      - name: Download, validate, receipt, and reuse offline
+        run: uv run pytest -m live tests/test_live_downloads.py
+
+      - name: Prune uv cache
+        if: always()
+        run: uv cache prune --ci

@@ -20,5 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   registration, platform caching, offline use, receipts, and assignment attrs.
 - Add validation, examples, plain-language documentation, property tests, and
   package build checks for population assignment.
+- Add opt-in live provider download coverage outside pull-request CI, with
+  monthly anonymous WorldPop and GHSL checks, manual GPW and Chambers options,
+  and documented Earthdata and LandScan limits.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main

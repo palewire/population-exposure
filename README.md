@@ -311,3 +311,19 @@ make verify
 ```
 
 The project uses uv, Ruff, ty, pytest, Hypothesis, and pre-commit.
+
+### Live provider downloads
+
+Ordinary tests use local fixtures and never contact population-data providers.
+The separate **Live population downloads** workflow runs on the first day of
+each month and can also be started manually. Its scheduled run downloads and
+validates the current catalog selections for anonymous WorldPop and GHSL,
+including receipts and an offline cache reuse.
+
+Manual workflow choices cover WorldPop, GHSL, GPW, Chambers, or all four.
+GPW needs the `EARTHDATA_TOKEN` repository secret; the workflow fails before
+downloading if that manual selection has no token. Chambers is manual only
+because its one shared source is 4,122,344,510 bytes. LandScan is excluded:
+its official portal requires registration and license acceptance, and the
+package continues to test local registration with fixtures rather than
+automating or redistributing it.
