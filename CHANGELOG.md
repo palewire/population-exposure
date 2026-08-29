@@ -25,5 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and documented Earthdata and LandScan limits.
 - Compare the manual authenticated GPW fine population-count raster against
   CIESIN's official one-degree count grid for the same catalog year.
+- Base GPW parity tolerances on each official coarse float32 count's
+  representable precision, while retaining low-value and aggregate checks.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main

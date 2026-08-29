@@ -133,7 +133,19 @@ def _assert_gpw_parity(
         _fail(GPW, selection, "official CIESIN coarse-oracle alignment", error)
 
     assert parity.compared_cells > 0, f"{GPW} ({selection}) had no comparable cells."
-    assert parity.maximum_absolute_difference <= 1.0, (
-        f"{GPW} ({selection}) fine counts differed from CIESIN's official one-degree "
-        f"counts by {parity.maximum_absolute_difference:.12g} people."
+    assert parity.maximum_tolerance_normalized_difference <= 1.0, (
+        f"{GPW} ({selection}) fine counts exceeded CIESIN's float32 precision "
+        f"allowance: compared cells={parity.compared_cells}, "
+        f"worst absolute difference={parity.maximum_absolute_difference:.12g} people, "
+        f"maximum tolerance={parity.maximum_tolerance:.12g} people, "
+        f"maximum tolerance-normalized difference="
+        f"{parity.maximum_tolerance_normalized_difference:.12g}, "
+        f"maximum ULP-normalized difference="
+        f"{parity.maximum_ulp_normalized_difference:.12g}."
+    )
+    assert parity.aggregate_difference <= parity.aggregate_tolerance, (
+        f"{GPW} ({selection}) did not conserve the global population total: "
+        f"compared cells={parity.compared_cells}, "
+        f"aggregate difference={parity.aggregate_difference:.12g} people, "
+        f"aggregate tolerance={parity.aggregate_tolerance:.12g} people."
     )

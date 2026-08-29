@@ -18,6 +18,7 @@ from tests.live_downloads import (
     LANDSCAN,
     SCHEDULED_PROVIDERS,
     WORLDPOP,
+    _float64_sum_error_bound,
     compare_gpw_fine_to_coarse,
     download_failure_phase,
     gpw_coarse_oracle,
@@ -107,6 +108,66 @@ def test_gpw_parity_sums_exactly_aligned_tiny_fine_cells(
 
     assert parity.compared_cells == 4
     assert parity.maximum_absolute_difference == 0
+    assert parity.maximum_tolerance_normalized_difference == 0
+    assert parity.maximum_ulp_normalized_difference == 0
+    assert parity.aggregate_difference == 0
+
+
+def test_gpw_summation_error_bound_preserves_scalar_and_array_inputs() -> None:
+    scalar_bound = _float64_sum_error_bound(100.0, 4)
+    array_bound = _float64_sum_error_bound(np.array([100.0, 200.0]), 4)
+
+    assert isinstance(scalar_bound, float)
+    assert scalar_bound > 0
+    assert isinstance(array_bound, np.ndarray)
+    assert array_bound.shape == (2,)
+    assert np.all(array_bound > 0)
+    assert array_bound[1] == pytest.approx(2 * array_bound[0])
+
+
+def test_gpw_parity_allows_official_float32_publisher_quantization(
+    tmp_path: Path,
+) -> None:
+    fine_path = _write_count_grid(
+        tmp_path / "fine.tif",
+        np.array([[33_554_432, 2], [0, 0]], dtype=np.float32),
+        from_origin(-2, 2, 1, 1),
+    )
+    coarse_path = _write_count_grid(
+        tmp_path / "coarse.tif",
+        np.array([[33_554_432]], dtype=np.float32),
+        from_origin(-2, 2, 2, 2),
+    )
+
+    with rasterio.open(fine_path) as fine, rasterio.open(coarse_path) as coarse:
+        parity = compare_gpw_fine_to_coarse(fine, coarse)
+
+    assert parity.maximum_absolute_difference == 2
+    assert parity.maximum_tolerance >= 2
+    assert parity.maximum_tolerance_normalized_difference <= 1
+    assert parity.maximum_ulp_normalized_difference == pytest.approx(0.5)
+    assert parity.aggregate_difference <= parity.aggregate_tolerance
+
+
+def test_gpw_parity_rejects_a_material_coarse_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    fine_path = _write_count_grid(
+        tmp_path / "fine.tif",
+        np.array([[33_554_432, 2], [0, 0]], dtype=np.float32),
+        from_origin(-2, 2, 1, 1),
+    )
+    coarse_path = _write_count_grid(
+        tmp_path / "coarse.tif",
+        np.array([[33_554_428]], dtype=np.float32),
+        from_origin(-2, 2, 2, 2),
+    )
+
+    with rasterio.open(fine_path) as fine, rasterio.open(coarse_path) as coarse:
+        parity = compare_gpw_fine_to_coarse(fine, coarse)
+
+    assert parity.maximum_tolerance_normalized_difference > 1
+    assert parity.aggregate_difference > parity.aggregate_tolerance
 
 
 def test_gpw_parity_rejects_grids_without_a_shared_origin(tmp_path: Path) -> None:
