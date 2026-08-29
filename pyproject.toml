@@ -1,15 +1,18 @@
 [build-system]
-requires = ["setuptools>=84.0.0", "setuptools_scm>=10.2.1"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "your-package-name"
-dynamic = ["version"]
+name = "population-exposure"
+version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
-authors = [{ name = "Your Name", email = "you@example.com" }]
-description = "A short description of your package"
-keywords = []
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+]
+authors = [{ name = "Ben Welsh", email = "b@palewi.re" }]
+description = "Calculate population totals across ordered hazard bands"
+keywords = ["hazards", "pandas", "population"]
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -24,12 +27,9 @@ classifiers = [
 ]
 
 [project.urls]
-Documentation = "https://example.com/your-package-name"
-Source = "https://github.com/your-org/your-package-name"
-Issues = "https://github.com/your-org/your-package-name/issues"
-
-# [project.scripts]
-# your-command = "your_package_name.cli:main"
+Documentation = "https://github.com/palewire/population-exposure#readme"
+Source = "https://github.com/palewire/population-exposure"
+Issues = "https://github.com/palewire/population-exposure/issues"
 
 [dependency-groups]
 dev = [
@@ -38,7 +38,6 @@ dev = [
     "deptry",
     "pre-commit",
     "ruff",
-    "setuptools-scm",
     "twine",
     "ty",
     "vulture",
@@ -47,47 +46,18 @@ dev = [
 test = [
     "pytest",
     "pytest-cov",
-    "pytest-timeout",
-    "pytest-xdist",
-]
-test-extras = [
-    "freezegun",
     "hypothesis",
-    "pytest-env",
-    "pytest-ordering",
-    "pytest-randomly",
-    "pytest-rerunfailures",
-    "pytest-runner",
-    "pytest-sugar",
-    "pytest-vcr",
-]
-docs = [
-    "sphinx",
-    "sphinx-autobuild",
-    "sphinxcontrib-mermaid",
-    "sphinx_copybutton",
-    "myst-parser",
-    "sphinx-palewire-theme>=0.1.10",
-]
-notebooks = [
-    "jupyterlab",
-    "ipywidgets",
-    "rich",
-    "pandas",
-    "pyarrow",
-    "xlrd",
-    "openpyxl",
-    "altair",
+    "pytest-timeout",
 ]
 
-# Adopt a src/ layout when adding a library:
-# [tool.setuptools.package-dir]
-# "" = "src"
-#
-# [tool.setuptools.packages.find]
-# where = ["src"]
+[tool.setuptools.package-dir]
+"" = "src"
 
-[tool.setuptools_scm]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+population_exposure = ["py.typed"]
 
 [tool.ruff]
 target-version = "py311"
@@ -171,16 +141,19 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-# Set source = ["your_package_name"] after adding the library package.
+source = ["population_exposure"]
 branch = true
 relative_files = true
 omit = ["*/__pycache__/*"]
+
+[tool.deptry]
+known_first_party = ["population_exposure"]
 
 [tool.ty.environment]
 python-version = "3.11"
 
 [tool.ty.src]
-# Set include = ["src/your_package_name"] after adding the library package.
+include = ["src/population_exposure"]
 exclude = [
     "tests/**",
     "build/**",

@@ -1,51 +1,119 @@
-# Python Open Source Template
+# population-exposure
 
-A starter repository for Python packages with `uv`, Ruff, ty, pytest, Sphinx,
-GitHub Actions, and agent-friendly project guidance.
+`population-exposure` is a small pandas-first library for totaling population
+weights across ordered hazard bands. It joins tables on exact cell keys and can
+calculate totals globally or for groups supplied by the caller.
 
-## Start a Project
+## Install
 
-1. Use this template to create a repository.
-2. Complete [TEMPLATE_SETUP.md](TEMPLATE_SETUP.md) before the first release.
-3. Bootstrap the checkout and install development dependencies:
+```sh
+pip install population-exposure
+```
 
-   ```sh
-   make bootstrap
-   ```
+Python 3.11 or newer is required.
 
-The template intentionally does not define a package, API, or application.
-Choose those when adapting it.
+## Public API
 
-`make bootstrap` is safe to run again. In a linked Git worktree, it links the
-primary checkout's ignored `.env` when one exists, without replacing any local
-file. It also creates an ignored `.env.worktree` containing a stable
-`WORKTREE_ID` for namespacing ports, databases, caches, or containers. Existing
-local settings in that file are preserved.
+The package exports three symbols:
 
-Applications must opt in to loading dotenv files. When supported, load the
-shared `.env` first and `.env.worktree` second so worktree-local values take
-precedence. The bootstrap does not assume a web framework or dotenv library.
+```text
+ExposureBand(
+    id: str,
+    lower_bound: float | None,
+    upper_bound: float | None,
+    label: str | None = None,
+)
+
+ExposureBands(bands: tuple[ExposureBand, ...])
+
+calculate_exposure(
+    hazard: pd.DataFrame,
+    population: pd.DataFrame,
+    *,
+    bands: ExposureBands,
+    hazard_column: str,
+    population_column: str = "population",
+    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    group_by: str | Sequence[str] | None = None,
+) -> pd.DataFrame
+```
+
+Use `ExposureBands.from_breaks(...)` for the common case, or construct
+`ExposureBand` objects directly when the bounds already exist.
+
+## Global example
+
+```python
+import pandas as pd
+
+from population_exposure import ExposureBands, calculate_exposure
+
+hazard = pd.DataFrame(
+    {
+        "longitude": [10.0, 11.0, 12.0],
+        "latitude": [20.0, 20.0, 20.0],
+        "temperature": [-3.0, 0.0, 4.0],
+    }
+)
+population = pd.DataFrame(
+    {
+        "longitude": [10.0, 11.0, 12.0],
+        "latitude": [20.0, 20.0, 20.0],
+        "population": [100.0, 200.0, 50.0],
+    }
+)
+bands = ExposureBands.from_breaks(
+    [-2.0, 2.0],
+    ids=("below", "near", "above"),
+)
+
+result = calculate_exposure(
+    hazard,
+    population,
+    bands=bands,
+    hazard_column="temperature",
+)
+```
+
+Values exactly on a break enter the higher band. Every band appears in the
+result, including bands with zero population.
+
+## Grouped example
+
+Add a column to the population table and name it with `group_by`:
+
+```python
+population["region"] = ["west", "central", "east"]
+
+regional = calculate_exposure(
+    hazard,
+    population,
+    bands=bands,
+    hazard_column="temperature",
+    group_by="region",
+)
+```
+
+Groups may overlap: the same cell can appear in several groups, but not twice
+within one group. Each group is valid on its own; overlapping group totals are
+not additive.
+
+## Failure behavior
+
+Cell and group keys are matched exactly. Missing keys, null keys, duplicate
+cells, unmatched population cells, and invalid population weights raise clear
+errors. Missing or infinite hazard values are excluded from both band totals
+and represented population. The input data frames are never changed.
+
+The package does not perform spatial assignment, coordinate conversion,
+longitude normalization, population splitting, full-grid checks, or file
+loading. See [the data model](docs/data-model.md) for complete semantics.
 
 ## Development
 
 ```sh
-make check   # Fast lint, format, and type checks
-make verify  # Checks, tests, package build, and strict documentation build
+make bootstrap
+make verify
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidance and
-[AGENTS.md](AGENTS.md) for agent instructions.
-
-## Dev Container
-
-Open the repository in a Dev Container to use the pinned Python and uv
-environment. It installs all dependency groups and the configured Git hooks on
-creation, while retaining the uv download cache between rebuilds.
-
-## Documentation and Releases
-
-Documentation lives in `docs/` and is built with Sphinx using the Palewire
-theme. The documentation workflow builds every push and pull request.
-
-Follow [RELEASING.md](RELEASING.md) for the release checklist and
-[CHANGELOG.md](CHANGELOG.md) for user-facing changes.
+The project uses uv, Ruff, ty, pytest, Hypothesis, and pre-commit.
