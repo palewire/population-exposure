@@ -498,9 +498,10 @@ def test_gpw_forwards_explicit_earthdata_token_without_exposing_it(
         )
 
     assert received_authorization == [True, True]
-    assert all(
+    token_is_not_disclosed = all(
         token not in text for text in (receipt_text, str(error.value), caplog.text)
     )
+    assert token_is_not_disclosed
 
 
 def test_gpw_requires_a_user_token_before_network(
