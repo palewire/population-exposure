@@ -88,6 +88,6 @@ def assign_population(
             f"{count} hazard {noun} did not match a population cell exactly."
         )
 
-    result = hazard.copy(deep=True)
+    result = hazard.copy(deep=False)
     result[population_column] = assigned["__population"].to_numpy(dtype=float)
     return result
