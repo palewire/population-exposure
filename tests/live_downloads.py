@@ -41,6 +41,11 @@ class GpwParityResult:
 
     compared_cells: int
     maximum_absolute_difference: float
+    maximum_tolerance: float
+    maximum_tolerance_normalized_difference: float
+    maximum_ulp_normalized_difference: float
+    aggregate_difference: float
+    aggregate_tolerance: float
 
 
 def providers_for_run(value: str | None = None) -> tuple[str, ...]:
@@ -99,9 +104,36 @@ def compare_gpw_fine_to_coarse(
     fine: DatasetReader,
     coarse: DatasetReader,
 ) -> GpwParityResult:
-    """Compare exact one-degree sums from GPW's 30-arc-second count grid."""
+    """Compare one-degree sums from GPW's 30-arc-second count grid.
+
+    The official one-degree population-count raster stores values as float32.
+    Each fine-cell sum therefore may differ by half an adjacent coarse float32
+    value, plus the bounded error from a float64 summation. For values where
+    that bound is below one person, a one-person allowance preserves the
+    existing practical guardrail against low-value count differences.
+
+    Args:
+        fine: Open 30-arc-second official GPW population-count raster.
+        coarse: Open one-degree official GPW population-count raster.
+
+    Returns:
+        Parity diagnostics, including per-cell and global precision-aware
+        tolerances.
+
+    Raises:
+        ValueError: If the grids do not align or the official coarse grid is
+            not float32.
+
+    Examples:
+        >>> # Compare two aligned Rasterio readers.
+        >>> parity = compare_gpw_fine_to_coarse(fine, coarse)
+        >>> parity.maximum_tolerance_normalized_difference <= 1
+        True
+    """
     rows_per_cell, columns_per_cell = _aligned_aggregation_shape(fine, coarse)
     fine_sums = np.empty((coarse.height, coarse.width), dtype=np.float64)
+    fine_summation_errors = np.empty_like(fine_sums)
+    fine_terms_per_sum = rows_per_cell * columns_per_cell
     for row in range(coarse.height):
         fine_row = fine.read(
             1,
@@ -114,23 +146,80 @@ def compare_gpw_fine_to_coarse(
             masked=True,
         )
         values = np.asarray(fine_row.filled(0), dtype=np.float64)
-        fine_sums[row] = values.reshape(
+        blocks = values.reshape(
             rows_per_cell,
             coarse.width,
             columns_per_cell,
-        ).sum(axis=(0, 2), dtype=np.float64)
+        )
+        fine_sums[row] = blocks.sum(axis=(0, 2), dtype=np.float64)
+        fine_summation_errors[row] = _float64_sum_error_bound(
+            np.abs(blocks).sum(axis=(0, 2), dtype=np.float64),
+            fine_terms_per_sum,
+        )
 
     coarse_values = coarse.read(1, masked=True)
+    if coarse_values.dtype != np.dtype(np.float32):
+        raise ValueError(
+            "Official GPW coarse oracle must use float32 population-count values."
+        )
     valid = ~np.ma.getmaskarray(coarse_values)
     if not np.any(valid):
         raise ValueError("Official GPW coarse oracle has no valid population cells.")
-    differences = np.abs(
-        fine_sums[valid] - np.asarray(coarse_values.data[valid], dtype=np.float64)
+    coarse_data = np.asarray(coarse_values.data, dtype=np.float32)
+    coarse_float64 = np.asarray(coarse_data, dtype=np.float64)
+    differences = np.abs(fine_sums[valid] - coarse_float64[valid])
+    coarse_ulps = np.abs(np.spacing(coarse_data[valid])).astype(np.float64)
+    tolerances = np.maximum(
+        1.0,
+        0.5 * coarse_ulps + fine_summation_errors[valid],
+    )
+    aggregate_difference = abs(
+        np.sum(fine_sums[valid], dtype=np.float64)
+        - np.sum(coarse_float64[valid], dtype=np.float64)
+    )
+    aggregate_tolerance = float(
+        np.sum(tolerances, dtype=np.float64)
+        + _float64_sum_error_bound(
+            np.sum(np.abs(fine_sums[valid]), dtype=np.float64),
+            int(np.count_nonzero(valid)),
+        )
+        + _float64_sum_error_bound(
+            np.sum(np.abs(coarse_float64[valid]), dtype=np.float64),
+            int(np.count_nonzero(valid)),
+        )
     )
     return GpwParityResult(
         compared_cells=int(np.count_nonzero(valid)),
         maximum_absolute_difference=float(np.max(differences)),
+        maximum_tolerance=float(np.max(tolerances)),
+        maximum_tolerance_normalized_difference=float(np.max(differences / tolerances)),
+        maximum_ulp_normalized_difference=float(np.max(differences / coarse_ulps)),
+        aggregate_difference=float(aggregate_difference),
+        aggregate_tolerance=aggregate_tolerance,
     )
+
+
+def _float64_sum_error_bound(
+    absolute_sums: float | np.ndarray,
+    terms: int,
+) -> float | np.ndarray:
+    """Return a conservative error bound for summing float64 values.
+
+    Args:
+        absolute_sums: Sum of the absolute values being added.
+        terms: Number of values in each sum.
+
+    Returns:
+        An upper bound for standard float64 summation error.
+
+    Examples:
+        >>> _float64_sum_error_bound(100.0, 4) > 0
+        True
+    """
+    operations = max(terms - 1, 0)
+    unit_roundoff = np.finfo(np.float64).eps
+    gamma = operations * unit_roundoff / (1 - operations * unit_roundoff)
+    return np.nextafter(np.asarray(absolute_sums) * gamma * (1 + gamma), np.inf)
 
 
 def _aligned_aggregation_shape(

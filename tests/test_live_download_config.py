@@ -107,6 +107,54 @@ def test_gpw_parity_sums_exactly_aligned_tiny_fine_cells(
 
     assert parity.compared_cells == 4
     assert parity.maximum_absolute_difference == 0
+    assert parity.maximum_tolerance_normalized_difference == 0
+    assert parity.maximum_ulp_normalized_difference == 0
+    assert parity.aggregate_difference == 0
+
+
+def test_gpw_parity_allows_official_float32_publisher_quantization(
+    tmp_path: Path,
+) -> None:
+    fine_path = _write_count_grid(
+        tmp_path / "fine.tif",
+        np.array([[33_554_432, 2], [0, 0]], dtype=np.float32),
+        from_origin(-2, 2, 1, 1),
+    )
+    coarse_path = _write_count_grid(
+        tmp_path / "coarse.tif",
+        np.array([[33_554_432]], dtype=np.float32),
+        from_origin(-2, 2, 2, 2),
+    )
+
+    with rasterio.open(fine_path) as fine, rasterio.open(coarse_path) as coarse:
+        parity = compare_gpw_fine_to_coarse(fine, coarse)
+
+    assert parity.maximum_absolute_difference == 2
+    assert parity.maximum_tolerance >= 2
+    assert parity.maximum_tolerance_normalized_difference <= 1
+    assert parity.maximum_ulp_normalized_difference == pytest.approx(0.5)
+    assert parity.aggregate_difference <= parity.aggregate_tolerance
+
+
+def test_gpw_parity_rejects_a_material_coarse_count_mismatch(
+    tmp_path: Path,
+) -> None:
+    fine_path = _write_count_grid(
+        tmp_path / "fine.tif",
+        np.array([[33_554_432, 2], [0, 0]], dtype=np.float32),
+        from_origin(-2, 2, 1, 1),
+    )
+    coarse_path = _write_count_grid(
+        tmp_path / "coarse.tif",
+        np.array([[33_554_428]], dtype=np.float32),
+        from_origin(-2, 2, 2, 2),
+    )
+
+    with rasterio.open(fine_path) as fine, rasterio.open(coarse_path) as coarse:
+        parity = compare_gpw_fine_to_coarse(fine, coarse)
+
+    assert parity.maximum_tolerance_normalized_difference > 1
+    assert parity.aggregate_difference > parity.aggregate_tolerance
 
 
 def test_gpw_parity_rejects_grids_without_a_shared_origin(tmp_path: Path) -> None:
