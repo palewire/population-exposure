@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -34,8 +36,21 @@ def population_frame() -> pd.DataFrame:
 
 
 def test_public_api_is_limited_to_assign_population() -> None:
-    assert population_exposure.__all__ == ["assign_population"]
+    assert population_exposure.__all__ == ["RasterAssignment", "assign_population"]
     assert population_exposure.assign_population is assign_population
+
+
+def test_tabular_parameters_remain_in_the_public_signature() -> None:
+    parameters = inspect.signature(assign_population).parameters
+
+    assert list(parameters)[:4] == [
+        "hazard",
+        "population",
+        "cell_columns",
+        "population_column",
+    ]
+    assert parameters["cell_columns"].default == ("longitude", "latitude")
+    assert parameters["population_column"].default == "population"
 
 
 def test_assigns_population_and_preserves_input_structure() -> None:
@@ -256,6 +271,12 @@ def test_population_values_must_be_numeric(value: list[object]) -> None:
             "population_column cannot also be a cell column",
         ),
         ({"population_column": ""}, "population_column must be a non-empty"),
+        ({"allow_overlaps": True}, "allow_overlaps applies only to vector"),
+        ({"hazard_band": 1}, "hazard_band applies only to raster"),
+        (
+            {"conservation_tolerance": -1},
+            "conservation_tolerance must be finite and non-negative",
+        ),
     ],
 )
 def test_invalid_column_options_fail(
@@ -263,6 +284,33 @@ def test_invalid_column_options_fail(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
+        assign_population(hazard_frame(), population_frame(), **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error", "message"),
+    [
+        ({"allow_overlaps": 1}, TypeError, "allow_overlaps must be a boolean"),
+        ({"hazard_band": True}, TypeError, "hazard_band must be an integer"),
+        ({"hazard_band": "1"}, TypeError, "hazard_band must be an integer"),
+        (
+            {"conservation_tolerance": np.inf},
+            ValueError,
+            "conservation_tolerance must be finite",
+        ),
+        (
+            {"conservation_tolerance": True},
+            ValueError,
+            "conservation_tolerance must be finite",
+        ),
+    ],
+)
+def test_invalid_shared_options_fail(
+    kwargs: dict[str, object],
+    error: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(error, match=message):
         assign_population(hazard_frame(), population_frame(), **kwargs)
 
 

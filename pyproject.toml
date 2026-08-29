@@ -7,8 +7,13 @@ name = "population-exposure"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    "exactextract>=0.3.0",
+    "geopandas>=1.1.0",
     "numpy>=1.26",
     "pandas>=2.2",
+    "pyogrio>=0.13.0",
+    "rasterio>=1.4.4,<1.5",
+    "shapely>=2.1.0",
 ]
 authors = [{ name = "Ben Welsh", email = "b@palewi.re" }]
 description = "Assign population values to hazard data"
@@ -138,6 +143,8 @@ filterwarnings = [
     "ignore::DeprecationWarning:pandas.*",
     "ignore::FutureWarning:numpy.*",
     "ignore::DeprecationWarning:dateutil.*",
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:numpy.ma.core",
+    "ignore:Use `@` matmul instead of `\\*` mul operator:PendingDeprecationWarning:rasterio.transform",
 ]
 
 [tool.coverage.run]

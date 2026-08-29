@@ -81,7 +81,9 @@ package-check: ## Build, install, and import PACKAGE in an isolated environment
 	$(UV) venv --no-project "$$temp_dir/venv"; \
 	$(UV) pip install --python "$$temp_dir/venv/bin/python" "$$temp_dir"/dist/*.whl; \
 	cd "$$temp_dir" && "$$temp_dir/venv/bin/python" -c 'import importlib; importlib.import_module("$(PACKAGE)")'; \
-	"$$temp_dir/venv/bin/python" "$(CURDIR)/examples/basic.py" >/dev/null
+	"$$temp_dir/venv/bin/python" "$(CURDIR)/examples/basic.py" >/dev/null; \
+	"$$temp_dir/venv/bin/python" "$(CURDIR)/examples/vector.py" >/dev/null; \
+	"$$temp_dir/venv/bin/python" "$(CURDIR)/examples/raster.py" >/dev/null
 
 package-verify: package-check coverage ## Run package import and coverage checks
 
