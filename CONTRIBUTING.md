@@ -25,3 +25,7 @@ uv run pre-commit install
 
 Public behavior belongs in the README and `docs/`. Add a concise entry under
 `Unreleased` in `CHANGELOG.md` for user-facing changes.
+
+Immediately after opening a pull request, request a GitHub Copilot code review.
+Address every review comment in its thread, resolve each answered thread, and
+fix all CI failures before considering the pull request complete.

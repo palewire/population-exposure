@@ -1,10 +1,10 @@
 # population-exposure
 
 `population-exposure` assigns population counts to hazard rows, polygon
-features, or raster cells. You provide the hazard data and a local population
-dataset. The package handles exact table joins, vector reprojection and
-coverage, or raster alignment. Grouping and analysis remain ordinary pandas or
-NumPy work.
+features, or raster cells. Use a local population dataset or select one explicit
+source and year from the built-in catalog. The package handles exact table
+joins, vector reprojection and coverage, or raster alignment. Grouping and
+analysis remain ordinary pandas or NumPy work.
 
 ## Install
 
@@ -17,7 +17,7 @@ Exactextract are installed as normal dependencies.
 
 ## Public API
 
-The package has one operation:
+The assignment operation is:
 
 ```python
 def assign_population(
@@ -35,12 +35,123 @@ def assign_population(
 | Hazard input | Population input | Return type |
 |---|---|---|
 | `pandas.DataFrame` | `pandas.DataFrame` | `pandas.DataFrame` |
-| `geopandas.GeoDataFrame`, GeoJSON, Shapefile, or GeoPackage | local population-count GeoTIFF or open Rasterio reader | `geopandas.GeoDataFrame` |
-| local hazard GeoTIFF or open Rasterio reader | local population-count GeoTIFF or open Rasterio reader | `RasterAssignment` |
+| `geopandas.GeoDataFrame`, GeoJSON, Shapefile, or GeoPackage | catalog selection, local population-count GeoTIFF, or open Rasterio reader | `geopandas.GeoDataFrame` |
+| local hazard GeoTIFF or open Rasterio reader | catalog selection, local population-count GeoTIFF, or open Rasterio reader | `RasterAssignment` |
 
 `RasterAssignment` is the documented raster result type. It stores grid
 metadata and source references, not a long DataFrame or eagerly loaded global
 array.
+
+The `populations` namespace lists, describes, downloads, and registers catalog
+data:
+
+```python
+from population_exposure import populations
+
+populations.list()
+populations.info("worldpop-global-1km:2020")
+populations.download("worldpop-global-1km:2020")
+populations.register("landscan-global:2024", "/downloads/landscan-global-2024.tif")
+```
+
+## Population catalog
+
+Every selection has the exact form `source-id:YYYY`. Bare names, unsupported
+years, malformed selections, and `latest` raise an error rather than choosing a
+release for you.
+
+| Source ID | Supported years | Meaning | Acquisition |
+|---|---|---|---|
+| `worldpop-global-1km` | 2000-2020 annually | Residential count, unconstrained 30 arc-second global mosaic | Anonymous WorldPop download |
+| `ghsl-r2023a-mollweide-1km` | 1975-2020 every five years | Residential count, R2023A V1.0, World Mollweide 1 km | Anonymous JRC download |
+| `gpwv4-r11-count` | 2000, 2005, 2010, 2015, 2020 | Residential count, GPWv4 Revision 11, 30 arc-seconds | NASA Earthdata token or local registration |
+| `chambers-hybrid` | 1950-2020 annually | Residential count derived from 21 age bands, 0.25 degrees | Immutable Zenodo download |
+| `landscan-global` | 2000-2024 annually | Ambient 24-hour count, 30 arc-seconds | Manual ORNL acquisition and local registration |
+
+Inspect the license, citation, DOI, size, grid, and acquisition method before
+downloading:
+
+```python
+from population_exposure import populations
+
+selected = populations.info("ghsl-r2023a-mollweide-1km:2020")
+print(selected.license)
+print(selected.citation)
+print(selected.download_size)
+print(selected.official_url)
+```
+
+WorldPop and GHSL download anonymously from documented publisher routes. GHSL
+uses the release-qualified `R2023A` World Mollweide 1 km count grid; the 2025
+and 2030 projection grids are not included. GPW uses the population-count
+product, not density or the separately published UN-adjusted product. Pass a
+user-owned Earthdata token for GPW:
+
+```python
+path = populations.download(
+    "gpwv4-r11-count:2020",
+    earthdata_token=my_earthdata_token,
+)
+```
+
+The token is used only in the official request. It is never logged, cached, or
+written to a receipt. `EARTHDATA_TOKEN` is also supported for direct assignment
+with a GPW selection.
+
+The Chambers source is the 4,122,344,510-byte NetCDF-4 file at Zenodo DOI
+`10.5281/zenodo.6011021`. It is downloaded and verified once. A requested
+annual count raster is then derived in bounded windows by summing its 21 age
+bands, so the full source is not loaded into memory or duplicated for each
+year. The dataset is associated with the 2020 *Lancet Countdown* report, not a
+Nature publication.
+
+LandScan is different. Register and accept the terms at the
+[official ORNL portal](https://landscan.ornl.gov/), download one explicit year,
+extract its GeoTIFF, then register a copy:
+
+```python
+from population_exposure import populations
+
+path = populations.register(
+    "landscan-global:2024",
+    "/downloads/landscan-global-2024.tif",
+)
+```
+
+Registration validates the source, year, count units, grid, values, and
+plausible total, then copies the file into the cache without changing the
+original. The package does not automate ORNL's form, use undocumented
+endpoints or mirrors, redistribute LandScan data, or claim redistribution
+rights.
+
+### Cache, receipts, and offline work
+
+The default cache uses the operating system's normal application cache
+location. Override it per call with `cache_dir=` or set
+`POPULATION_EXPOSURE_CACHE_DIR`. Each entry is grouped by source, release, and
+year. A file lock keeps concurrent processes from installing the same entry at
+once.
+
+Downloads stream to a same-directory partial file, enforce size limits, resume
+only after the server advertises and correctly accepts byte ranges, verify
+publisher checksums where supplied, and replace the final path only after
+validation. A verified cache entry is reused unless `refresh=True`.
+
+```python
+path = populations.download(
+    "worldpop-global-1km:2020",
+    offline=True,
+)
+```
+
+Offline mode makes no network calls. It uses an exact verified cached or
+registered file, or fails with instructions. Set
+`POPULATION_EXPOSURE_OFFLINE=1` to make direct catalog assignment offline.
+
+Every cached raster has an adjacent `.json` receipt with the exact selection,
+official and landing URLs, retrieval time, local SHA-256, observed grid and
+unit facts, license, citation, DOI, and processing note. Receipts describe cache
+files only; they are not a general data-version system.
 
 ## Tables
 
@@ -102,7 +213,7 @@ hazard = gpd.GeoDataFrame(
     crs="EPSG:3857",
 )
 
-exposed = assign_population(hazard, "population-counts.tif")
+exposed = assign_population(hazard, "worldpop-global-1km:2020")
 ```
 
 The vector result preserves the original columns, geometry, CRS, index, and row
@@ -125,7 +236,7 @@ opened by the caller as a `GeoDataFrame` so the layer choice is explicit.
 ```python
 from population_exposure import assign_population
 
-exposed = assign_population("hazard.tif", "population-counts.tif")
+exposed = assign_population("hazard.tif", "ghsl-r2023a-mollweide-1km:2020")
 
 hazard_values, population_values = exposed.read()
 
@@ -166,16 +277,27 @@ Path inputs are opened and closed for each operation. Caller-owned Rasterio
 readers are never closed and must remain open while a `RasterAssignment` uses
 them.
 
+Catalog assignments add source ID, release, year, DOI, citation, license,
+count/ambient meaning, local hash, observed raster facts, and processing note
+under `result.attrs["population_source"]`. Custom local files and caller-owned
+readers remain first-class. Their attrs contain only observed facts, local path
+and hash where available, and no inferred license or citation.
+
+To use any other local population-count raster:
+
+```python
+exposed = assign_population("hazard.tif", "/data/custom-population-counts.tif")
+```
+
 ## Scope
 
 The package does not define bands or categories, group results, calculate
-shares, download population sources, convert density rasters, or resolve
-overlapping polygons. Callers can use normal pandas, NumPy, or xarray operations
-after assignment.
+shares, convert density rasters, or resolve overlapping polygons. Callers can
+use normal pandas, NumPy, or xarray operations after assignment.
 
 See [the data model](docs/data-model.md) and the executable
 [table](examples/basic.py), [vector](examples/vector.py), and
-[raster](examples/raster.py) examples.
+[raster](examples/raster.py), and [catalog](examples/catalog.py) examples.
 
 ## Development
 

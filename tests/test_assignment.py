@@ -35,9 +35,14 @@ def population_frame() -> pd.DataFrame:
     )
 
 
-def test_public_api_is_limited_to_assign_population() -> None:
-    assert population_exposure.__all__ == ["RasterAssignment", "assign_population"]
+def test_public_api_is_limited_to_documented_symbols() -> None:
+    assert population_exposure.__all__ == [
+        "RasterAssignment",
+        "assign_population",
+        "populations",
+    ]
     assert population_exposure.assign_population is assign_population
+    assert population_exposure.populations is not None
 
 
 def test_tabular_parameters_remain_in_the_public_signature() -> None:
@@ -148,6 +153,16 @@ def test_empty_hazard_returns_empty_float_population_column() -> None:
     assert result.columns.tolist() == [*hazard.columns, "population"]
     assert result["population"].dtype == float
     assert result.index.equals(hazard.index)
+
+
+def test_empty_hazard_and_population_use_an_empty_numeric_array() -> None:
+    hazard = hazard_frame().iloc[:0]
+    population = population_frame().iloc[:0]
+
+    result = assign_population(hazard, population)
+
+    assert result.empty
+    assert result["population"].dtype == float
 
 
 @pytest.mark.parametrize(

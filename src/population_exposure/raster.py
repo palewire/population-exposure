@@ -93,7 +93,6 @@ def assign_raster_population(
 ) -> RasterAssignment:
     """Validate rasters and return a lazy population-aligned result."""
     hazard_source = normalize_raster_source(hazard, parameter="hazard")
-    population_source = normalize_raster_source(population, parameter="population")
 
     with open_raster(hazard_source, parameter="hazard") as hazard_reader:
         selected_band = _select_hazard_band(hazard_reader, hazard_band)
@@ -109,22 +108,35 @@ def assign_raster_population(
         )
         footprint = _raster_footprint(hazard_reader)
 
-        with open_raster(
-            population_source, parameter="population"
-        ) as population_reader:
-            source_total = validate_population_raster(population_reader)
-            expected_total = _population_in_footprint(
-                population_reader,
-                footprint,
-                hazard_crs,
-            )
-            aligned_total = _aligned_population_total(
-                population_reader,
-                crs=hazard_crs,
-                transform=transform,
-                shape=shape,
-                block_shape=block_shape,
-            )
+    from population_exposure.populations._api import (
+        metadata_for_reader,
+        resolve_for_assignment,
+    )
+
+    resolved_population = resolve_for_assignment(population)
+    population_source = normalize_raster_source(
+        resolved_population.source,
+        parameter="population",
+    )
+    with open_raster(population_source, parameter="population") as population_reader:
+        source_total = validate_population_raster(population_reader)
+        population_metadata = metadata_for_reader(
+            resolved_population,
+            population_reader,
+            total=source_total,
+        )
+        expected_total = _population_in_footprint(
+            population_reader,
+            footprint,
+            hazard_crs,
+        )
+        aligned_total = _aligned_population_total(
+            population_reader,
+            crs=hazard_crs,
+            transform=transform,
+            shape=shape,
+            block_shape=block_shape,
+        )
 
     difference = abs(aligned_total - expected_total)
     allowed_difference = conservation_tolerance * max(1.0, abs(expected_total))
@@ -143,6 +155,7 @@ def assign_raster_population(
             "population_covered_total": expected_total,
             "population_aligned_total": aligned_total,
             "population_conservation_tolerance": conservation_tolerance,
+            "population_source": population_metadata,
         }
     )
     return RasterAssignment(

@@ -13,6 +13,7 @@ from rasterio.warp import transform_bounds
 
 from population_exposure import RasterAssignment, assign_population
 from population_exposure import raster as raster_module
+from population_exposure.raster import normalize_raster_source
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -78,7 +79,9 @@ def test_same_grid_returns_lazy_aligned_result(tmp_path: Path) -> None:
     hazard_values, population_values = result.read()
     np.testing.assert_array_equal(hazard_values, [[10, 20], [30, 40]])
     np.testing.assert_array_equal(population_values, [[1.0, 2.0], [3.0, 4.0]])
-    assert result.attrs == {
+    assert {
+        key: value for key, value in result.attrs.items() if key != "population_source"
+    } == {
         "population_assignment": "raster_sum_resampling",
         "population_name": "population",
         "population_source_total": 10.0,
@@ -86,6 +89,8 @@ def test_same_grid_returns_lazy_aligned_result(tmp_path: Path) -> None:
         "population_aligned_total": 10.0,
         "population_conservation_tolerance": 1e-6,
     }
+    assert result.attrs["population_source"]["source_id"] == "custom"
+    assert len(result.attrs["population_source"]["local_sha256"]) == 64
 
 
 def test_different_crs_and_resolution_preserve_counts(tmp_path: Path) -> None:
@@ -385,6 +390,13 @@ def test_bad_population_sources_fail(tmp_path: Path) -> None:
         assign_population(hazard, object())  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="could not be opened"):
         assign_population(corrupt, hazard)
+
+
+def test_low_level_raster_source_validation_is_explicit(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="does not exist"):
+        normalize_raster_source(tmp_path / "missing.tif", parameter="population")
+    with pytest.raises(TypeError, match="GeoTIFF path or open Rasterio"):
+        normalize_raster_source(object(), parameter="population")  # type: ignore[arg-type]
 
 
 def test_closed_readers_fail_without_being_reopened(tmp_path: Path) -> None:

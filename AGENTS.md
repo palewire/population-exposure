@@ -3,12 +3,13 @@
 ## Scope
 
 This repository provides a small pandas-first library for assigning population
-values to hazard rows by exact cell keys. Keep the runtime dependencies limited
-to NumPy and pandas.
+values to hazard rows, vector features, and raster cells. Keep runtime
+dependencies limited to the current assignment stack plus narrowly justified
+catalog support.
 
-Do not add command-line tools, file loading, spatial processing, coordinate
-conversion, caching, parallelism, plugins, or compatibility layers without a
-clear project decision.
+Do not add command-line tools, coordinate conversion beyond assignment,
+parallel processing, plugins, or compatibility layers without a clear project
+decision.
 
 ## Development
 
@@ -32,3 +33,7 @@ environment files, credentials, or agent scratch files.
 
 Never publish a package, create a tag, or create a GitHub Release without
 explicit human approval.
+
+Immediately after opening every pull request, request a GitHub Copilot code
+review. Address every review comment in its thread, resolve each answered
+thread, and fix all CI failures before reporting completion.

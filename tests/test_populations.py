@@ -1,0 +1,1009 @@
+"""Tests for the built-in population dataset catalog."""
+
+from __future__ import annotations
+
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from pathlib import Path
+from types import MappingProxyType
+from zipfile import ZipFile
+
+import geopandas as gpd
+import numpy as np
+import pytest
+import rasterio
+from filelock import Timeout
+from rasterio.io import MemoryFile
+from rasterio.transform import from_origin
+from shapely.geometry import box
+
+from population_exposure import assign_population, populations
+from population_exposure.populations import _api, _selection, _sources
+from population_exposure.populations._http import DownloadResult, sha256_file
+
+
+def write_population(
+    path: Path,
+    *,
+    values: np.ndarray | None = None,
+    year: int = 2020,
+    tags: dict[str, str] | None = None,
+    width: int = 2,
+    height: int = 2,
+    include_year: bool = True,
+) -> Path:
+    """Write a tiny invented count raster."""
+    data = (
+        np.array([[1.0, 2.0], [3.0, 4.0]])
+        if values is None
+        else np.asarray(values, dtype="float64")
+    )
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=width,
+        height=height,
+        count=1,
+        dtype="float64",
+        crs="EPSG:4326",
+        transform=from_origin(0, height, 1, 1),
+        nodata=-9999,
+    ) as dataset:
+        dataset.write(data, 1)
+        metadata: dict[str, str] = {
+            "population_semantics": "count",
+            "units": "population count per cell",
+        }
+        if include_year:
+            metadata["year"] = str(year)
+        metadata.update(tags or {})
+        dataset.update_tags(1, **metadata)
+    return path
+
+
+def use_tiny_source(
+    monkeypatch: pytest.MonkeyPatch,
+    source_id: str,
+    *,
+    delivery: str | None = None,
+):
+    """Replace one source's global grid checks with tiny fixture checks."""
+    source = _sources.SOURCES[source_id]
+    tiny = replace(
+        source,
+        delivery=delivery or source.delivery,
+        url_template="https://example.test/{year}",
+        filename_template=f"{source_id}-{{year}}.tif",
+        archive_member_template=f"{source_id}-{{year}}.tif"
+        if (delivery or source.delivery) == "zip"
+        else None,
+        crs="EPSG:4326",
+        expected_width=2,
+        expected_height=2,
+        expected_resolution=(1.0, 1.0),
+        expected_bounds=(0.0, 0.0, 2.0, 2.0),
+        expected_nodata=(-9999.0,),
+        plausible_total=(0.0, 1_000.0),
+        max_download_bytes=1_000_000,
+        exact_download_bytes=None,
+        publisher_checksum=None,
+    )
+    catalog = MappingProxyType(
+        {
+            key: tiny if key == source_id else value
+            for key, value in _sources.SOURCES.items()
+        }
+    )
+    monkeypatch.setattr(_sources, "SOURCES", catalog)
+    monkeypatch.setattr(_selection, "SOURCES", catalog)
+    monkeypatch.setattr(_api, "SOURCES", catalog)
+    return tiny
+
+
+def fake_downloader_from(
+    source_path: Path,
+    calls: list[dict[str, object]],
+):
+    """Return a downloader that installs fixture bytes."""
+
+    def fake_download(
+        url,
+        partial_path,
+        *,
+        headers,
+        max_bytes,
+        exact_bytes,
+        publisher_checksum,
+    ):
+        calls.append(
+            {
+                "url": url,
+                "headers": headers,
+                "max_bytes": max_bytes,
+                "exact_bytes": exact_bytes,
+                "publisher_checksum": publisher_checksum,
+            }
+        )
+        partial_path.write_bytes(source_path.read_bytes())
+        return DownloadResult(
+            size=partial_path.stat().st_size,
+            sha256=sha256_file(partial_path),
+        )
+
+    return fake_download
+
+
+def test_list_and_info_expose_verified_source_facts() -> None:
+    sources = populations.list()
+
+    assert [source.source_id for source in sources] == [
+        "worldpop-global-1km",
+        "ghsl-r2023a-mollweide-1km",
+        "gpwv4-r11-count",
+        "chambers-hybrid",
+        "landscan-global",
+    ]
+    assert all(source.supported_years for source in sources)
+    ghsl = populations.info("ghsl-r2023a-mollweide-1km:2020")
+    assert ghsl.release == "R2023A V1.0"
+    assert ghsl.crs == "ESRI:54009"
+    assert ghsl.meaning == "residential"
+    assert ghsl.license.startswith("Creative Commons Attribution")
+    assert ghsl.official_url.endswith("_V1_0.zip")
+    landscan = populations.info("landscan-global:2024")
+    assert landscan.meaning == "ambient"
+    assert landscan.doi == "10.48690/1532445"
+    assert "redistribution" in landscan.license
+
+
+@pytest.mark.parametrize(
+    ("selection", "message"),
+    [
+        ("worldpop-global-1km", "requires an explicit year"),
+        ("worldpop-global-1km:latest", "never use 'latest'"),
+        ("worldpop-global-1km:20", "exactly match"),
+        ("WORLDPOP-GLOBAL-1KM:2020", "exactly match"),
+        ("unknown-source:2020", "Unknown population source"),
+        ("worldpop-global-1km:1999", "does not support 1999"),
+        ("ghsl-r2023a-mollweide-1km:2025", "does not support 2025"),
+        ("gpwv4-r11-count:2019", "supported years"),
+    ],
+)
+def test_selection_must_be_exact(selection: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        populations.info(selection)
+
+
+def test_selection_must_be_a_string() -> None:
+    with pytest.raises(TypeError, match="must be a string"):
+        populations.info(2020)  # type: ignore[arg-type]
+
+
+def test_anonymous_download_writes_receipt_and_uses_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(fixture, calls))
+
+    result = populations.download(
+        "worldpop-global-1km:2020",
+        cache_dir=tmp_path / "cache",
+    )
+    cached = populations.download(
+        "worldpop-global-1km:2020",
+        cache_dir=tmp_path / "cache",
+    )
+
+    assert result == cached
+    assert len(calls) == 1
+    assert calls[0]["headers"] is None
+    receipt = json.loads(result.with_suffix(".tif.json").read_text())
+    assert receipt["selection"] == "worldpop-global-1km:2020"
+    assert receipt["local_sha256"] == sha256_file(result)
+    assert receipt["observed"]["population_total"] == 10.0
+    assert receipt["license"].startswith("Creative Commons")
+    assert receipt["processing_note"].startswith("Downloaded anonymously")
+    assert "_verified_mtime_ns" in receipt
+
+
+def test_refresh_replaces_a_verified_cache_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(fixture, calls))
+    cache = tmp_path / "cache"
+
+    first = populations.download("worldpop-global-1km:2020", cache_dir=cache)
+    first_receipt = json.loads(first.with_suffix(".tif.json").read_text())
+    second = populations.download(
+        "worldpop-global-1km:2020",
+        cache_dir=cache,
+        refresh=True,
+    )
+    second_receipt = json.loads(second.with_suffix(".tif.json").read_text())
+
+    assert first == second
+    assert len(calls) == 2
+    assert second_receipt["retrieved_at"] >= first_receipt["retrieved_at"]
+
+
+def test_failed_refresh_retains_the_last_verified_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        fake_downloader_from(fixture, []),
+    )
+    cache = tmp_path / "cache"
+    cached = populations.download("worldpop-global-1km:2020", cache_dir=cache)
+    before = cached.read_bytes()
+    receipt = cached.with_suffix(".tif.json")
+    receipt_before = receipt.read_bytes()
+
+    def fail_download(*args, **kwargs):
+        raise ValueError("publisher unavailable")
+
+    monkeypatch.setattr(_api, "download_file", fail_download)
+    with pytest.raises(ValueError, match="publisher unavailable"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=cache,
+            refresh=True,
+        )
+
+    assert cached.read_bytes() == before
+    assert receipt.read_bytes() == receipt_before
+
+
+def test_failed_refresh_receipt_write_rolls_back_file_and_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    first_fixture = write_population(tmp_path / "first-2020.tif")
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        fake_downloader_from(first_fixture, []),
+    )
+    cache = tmp_path / "cache"
+    cached = populations.download("worldpop-global-1km:2020", cache_dir=cache)
+    old_bytes = cached.read_bytes()
+    receipt = cached.with_suffix(".tif.json")
+    old_receipt = receipt.read_bytes()
+
+    second_fixture = write_population(
+        tmp_path / "second-2020.tif",
+        values=np.array([[10.0, 20.0], [30.0, 40.0]]),
+    )
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        fake_downloader_from(second_fixture, []),
+    )
+
+    def fail_receipt(*args, **kwargs):
+        target_receipt = args[1]
+        target_receipt.with_suffix(f"{target_receipt.suffix}.partial").write_text(
+            "partial"
+        )
+        raise OSError("disk full")
+
+    monkeypatch.setattr(_api, "write_receipt", fail_receipt)
+    with pytest.raises(OSError, match="disk full"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=cache,
+            refresh=True,
+        )
+
+    assert cached.read_bytes() == old_bytes
+    assert receipt.read_bytes() == old_receipt
+    assert not tuple(cache.rglob("*.backup"))
+    assert not tuple(cache.rglob("*.partial"))
+
+    empty_cache = tmp_path / "empty-cache"
+    with pytest.raises(OSError, match="disk full"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=empty_cache,
+        )
+    assert not tuple(empty_cache.rglob("*.tif"))
+    assert not tuple(empty_cache.rglob("*.json"))
+
+
+def test_offline_mode_never_downloads_and_environment_is_strict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    called = False
+
+    def fail_download(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("network called")
+
+    monkeypatch.setattr(_api, "download_file", fail_download)
+    monkeypatch.setenv("POPULATION_EXPOSURE_OFFLINE", "true")
+    with pytest.raises(ValueError, match="made no network request"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=tmp_path / "cache",
+        )
+    assert not called
+
+    monkeypatch.setenv("POPULATION_EXPOSURE_OFFLINE", "sometimes")
+    with pytest.raises(ValueError, match="POPULATION_EXPOSURE_OFFLINE must be"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=tmp_path / "cache",
+        )
+    with pytest.raises(TypeError, match="offline must be"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=tmp_path / "cache",
+            offline=1,  # type: ignore[arg-type]
+        )
+
+
+def test_offline_valid_cache_skips_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(fixture, calls))
+    cache = tmp_path / "cache"
+    expected = populations.download("worldpop-global-1km:2020", cache_dir=cache)
+
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        lambda *args, **kwargs: pytest.fail("network called"),
+    )
+    result = populations.download(
+        "worldpop-global-1km:2020",
+        cache_dir=cache,
+        offline=True,
+    )
+
+    assert result == expected
+    assert len(calls) == 1
+
+
+def test_gpw_uses_transient_earthdata_token_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = use_tiny_source(monkeypatch, "gpwv4-r11-count", delivery="zip")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    archive = tmp_path / "gpw.zip"
+    member = source.archive_member(2020)
+    assert member is not None
+    with ZipFile(archive, "w") as output:
+        output.write(fixture, arcname=f"folder/{member}")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(archive, calls))
+
+    result = populations.download(
+        "gpwv4-r11-count:2020",
+        cache_dir=tmp_path / "cache",
+        earthdata_token="user-owned-token",  # noqa: S106
+    )
+
+    assert calls[0]["headers"] == {"Authorization": "Bearer user-owned-token"}
+    receipt_text = result.with_suffix(".tif.json").read_text()
+    assert "user-owned-token" not in receipt_text
+    assert "transient user-owned token" in receipt_text
+
+
+def test_gpw_requires_a_user_token_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "gpwv4-r11-count", delivery="zip")
+    monkeypatch.delenv("EARTHDATA_TOKEN", raising=False)
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        lambda *args, **kwargs: pytest.fail("network called"),
+    )
+
+    with pytest.raises(ValueError, match="requires your Earthdata token"):
+        populations.download(
+            "gpwv4-r11-count:2020",
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_landscan_guides_manual_acquisition_and_registration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "landscan-global")
+    with pytest.raises(ValueError, match="official ORNL LandScan portal"):
+        populations.download(
+            "landscan-global:2024",
+            cache_dir=tmp_path / "cache",
+        )
+
+    original = write_population(tmp_path / "landscan-global-2024.tif", year=2024)
+    original_bytes = original.read_bytes()
+    registered = populations.register(
+        "landscan-global:2024",
+        original,
+        cache_dir=tmp_path / "cache",
+    )
+
+    assert registered != original
+    assert registered.read_bytes() == original_bytes
+    assert original.read_bytes() == original_bytes
+    receipt = json.loads(registered.with_suffix(".tif.json").read_text())
+    assert receipt["population_meaning"] == "ambient"
+    assert "original file was not modified" in receipt["processing_note"]
+
+    with pytest.raises(ValueError, match="verified cached file was retained"):
+        populations.download(
+            "landscan-global:2024",
+            cache_dir=tmp_path / "cache",
+            refresh=True,
+        )
+    assert registered.read_bytes() == original_bytes
+
+
+@pytest.mark.parametrize(
+    ("name", "tags", "values", "message"),
+    [
+        (
+            "landscan-global-2023.tif",
+            {"year": "2023"},
+            np.ones((2, 2)),
+            "not requested year",
+        ),
+        (
+            "landscan-global-2024.tif",
+            {"population_semantics": "density"},
+            np.ones((2, 2)),
+            "population_semantics=count",
+        ),
+        (
+            "landscan-global-2024.tif",
+            {},
+            np.array([[1.0, -1.0], [2.0, 3.0]]),
+            "non-negative",
+        ),
+    ],
+)
+def test_registration_rejects_wrong_year_density_and_bad_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    tags: dict[str, str],
+    values: np.ndarray,
+    message: str,
+) -> None:
+    use_tiny_source(monkeypatch, "landscan-global")
+    raster = write_population(
+        tmp_path / name,
+        year=2024,
+        values=values,
+        tags=tags,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        populations.register(
+            "landscan-global:2024",
+            raster,
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_registration_requires_existing_year_marked_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "landscan-global")
+    with pytest.raises(ValueError, match="does not exist"):
+        populations.register(
+            "landscan-global:2024",
+            tmp_path / "missing.tif",
+            cache_dir=tmp_path / "cache",
+        )
+    raster = write_population(
+        tmp_path / "population.tif",
+        year=2024,
+        include_year=False,
+    )
+    with pytest.raises(ValueError, match="must identify the requested year"):
+        populations.register(
+            "landscan-global:2024",
+            raster,
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_chambers_reuses_one_source_for_multiple_years_and_offline_derivation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "chambers-hybrid")
+    raw = tmp_path / "source.nc"
+    raw.write_bytes(b"invented netcdf fixture")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(raw, calls))
+    derived_years: list[int] = []
+
+    def derive(source_path: Path, output_path: Path, year: int) -> None:
+        assert source_path.read_bytes() == raw.read_bytes()
+        derived_years.append(year)
+        write_population(output_path, year=year)
+
+    monkeypatch.setattr(_api, "derive_chambers_year", derive)
+    cache = tmp_path / "cache"
+
+    first = populations.download("chambers-hybrid:2019", cache_dir=cache)
+    second = populations.download(
+        "chambers-hybrid:2020",
+        cache_dir=cache,
+        offline=True,
+    )
+
+    assert first != second
+    assert len(calls) == 1
+    assert derived_years == [2019, 2020]
+    receipt = json.loads(second.with_suffix(".tif.json").read_text())
+    assert receipt["source_file_sha256"] == sha256_file(raw)
+    assert "21 five-year age bands" in receipt["processing_note"]
+
+
+def test_catalog_selection_and_custom_path_assignment_attrs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    monkeypatch.setenv("POPULATION_EXPOSURE_CACHE_DIR", str(tmp_path / "cache"))
+    population = write_population(tmp_path / "worldpop-global-1km-2020.tif")
+    populations.register("worldpop-global-1km:2020", population)
+    hazard = write_population(
+        tmp_path / "hazard.tif",
+        values=np.array([[10, 20], [30, 40]]),
+    )
+
+    catalog_result = assign_population(hazard, "worldpop-global-1km:2020")
+    custom_result = assign_population(hazard, population)
+
+    assert (
+        catalog_result.attrs["population_source"]["selection"]
+        == "worldpop-global-1km:2020"
+    )
+    assert catalog_result.attrs["population_source"]["license"].startswith(
+        "Creative Commons"
+    )
+    assert custom_result.attrs["population_source"]["source_id"] == "custom"
+    assert len(custom_result.attrs["population_source"]["local_sha256"]) == 64
+
+
+def test_catalog_selection_attrs_are_attached_to_vector_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    monkeypatch.setenv("POPULATION_EXPOSURE_CACHE_DIR", str(tmp_path / "cache"))
+    population = write_population(tmp_path / "worldpop-global-1km-2020.tif")
+    populations.register("worldpop-global-1km:2020", population)
+    hazard = gpd.GeoDataFrame(
+        geometry=[box(0, 0, 2, 2)],
+        crs="EPSG:4326",
+    )
+
+    result = assign_population(hazard, "worldpop-global-1km:2020")
+
+    assert result["population"].item() == 10.0
+    assert result.attrs["population_source"]["year"] == 2020
+    assert result.attrs["population_source"]["local_sha256"]
+
+
+def test_existing_paths_win_and_missing_pathlike_values_do_not_become_selections(
+    tmp_path: Path,
+) -> None:
+    unusual = write_population(tmp_path / "worldpop-global-1km:2020")
+    hazard = write_population(
+        tmp_path / "hazard.tif",
+        values=np.array([[10, 20], [30, 40]]),
+    )
+
+    with pytest.raises(ValueError, match="must be a GeoTIFF"):
+        assign_population(hazard, unusual)
+
+    with pytest.raises(ValueError, match="path does not exist"):
+        assign_population(hazard, Path("worldpop-global-1km:2020"))
+    with pytest.raises(ValueError, match="path does not exist"):
+        assign_population(hazard, "missing-population.tif")
+
+
+def test_concurrent_downloads_install_one_cache_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    calls: list[dict[str, object]] = []
+    base_downloader = fake_downloader_from(fixture, calls)
+
+    def slow_download(*args, **kwargs):
+        time.sleep(0.05)
+        return base_downloader(*args, **kwargs)
+
+    monkeypatch.setattr(_api, "download_file", slow_download)
+    cache = tmp_path / "cache"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        paths = tuple(
+            pool.map(
+                lambda _: populations.download(
+                    "worldpop-global-1km:2020",
+                    cache_dir=cache,
+                ),
+                range(2),
+            )
+        )
+
+    assert paths[0] == paths[1]
+    assert len(calls) == 1
+
+
+def test_invalid_receipt_is_not_treated_as_verified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(fixture, calls))
+    cache = tmp_path / "cache"
+    result = populations.download("worldpop-global-1km:2020", cache_dir=cache)
+    receipt = result.with_suffix(".tif.json")
+    receipt.write_text("{}")
+
+    populations.download("worldpop-global-1km:2020", cache_dir=cache)
+
+    assert len(calls) == 2
+
+
+def test_cache_directory_environment_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "landscan-global")
+    monkeypatch.setenv("POPULATION_EXPOSURE_CACHE_DIR", str(tmp_path / "configured"))
+    original = write_population(tmp_path / "landscan-global-2024.tif", year=2024)
+
+    result = populations.register("landscan-global:2024", original)
+
+    assert tmp_path / "configured" in result.parents
+
+
+def test_refresh_and_register_option_types_are_checked(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="refresh must be"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=tmp_path,
+            refresh=1,  # type: ignore[arg-type]
+        )
+
+
+def test_ghsl_archive_download_extracts_only_the_expected_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = use_tiny_source(
+        monkeypatch,
+        "ghsl-r2023a-mollweide-1km",
+        delivery="zip",
+    )
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    archive = tmp_path / "ghsl.zip"
+    member = source.archive_member(2020)
+    assert member is not None
+    with ZipFile(archive, "w") as output:
+        output.writestr("unrelated.txt", "ignored")
+        output.write(fixture, arcname=member)
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(archive, calls))
+
+    result = populations.download(
+        "ghsl-r2023a-mollweide-1km:2020",
+        cache_dir=tmp_path / "cache",
+    )
+
+    assert result.is_file()
+    receipt = result.with_suffix(".tif.json").read_text()
+    assert "extracted the exact population-count GeoTIFF" in receipt
+
+
+def test_bad_archive_member_and_invalid_direct_raster_are_cleaned_up(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(
+        monkeypatch,
+        "ghsl-r2023a-mollweide-1km",
+        delivery="zip",
+    )
+    bad_archive = tmp_path / "bad.zip"
+    with ZipFile(bad_archive, "w") as output:
+        output.writestr("density.tif", b"not the requested count raster")
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        fake_downloader_from(bad_archive, []),
+    )
+    cache = tmp_path / "cache"
+    with pytest.raises(ValueError, match="must contain exactly one"):
+        populations.download(
+            "ghsl-r2023a-mollweide-1km:2020",
+            cache_dir=cache,
+        )
+    assert not tuple(cache.rglob("*.partial"))
+
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    corrupt = tmp_path / "corrupt.tif"
+    corrupt.write_text("not a GeoTIFF")
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(corrupt, []))
+    with pytest.raises(ValueError, match="not a readable GeoTIFF"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=cache,
+        )
+    assert not tuple(cache.rglob("*.partial"))
+
+
+def test_earthdata_environment_token_and_empty_token_handling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = use_tiny_source(monkeypatch, "gpwv4-r11-count", delivery="zip")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    archive = tmp_path / "gpw.zip"
+    member = source.archive_member(2020)
+    assert member is not None
+    with ZipFile(archive, "w") as output:
+        output.write(fixture, arcname=member)
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(archive, calls))
+    monkeypatch.setenv("EARTHDATA_TOKEN", "environment-token")
+
+    populations.download(
+        "gpwv4-r11-count:2020",
+        cache_dir=tmp_path / "cache",
+    )
+    assert calls[0]["headers"] == {"Authorization": "Bearer environment-token"}
+
+    monkeypatch.setenv("EARTHDATA_TOKEN", " ")
+    with pytest.raises(ValueError, match="requires your Earthdata token"):
+        populations.download(
+            "gpwv4-r11-count:2015",
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_registering_the_cache_file_again_is_safe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "landscan-global")
+    original = write_population(tmp_path / "landscan-global-2024.tif", year=2024)
+    cached = populations.register(
+        "landscan-global:2024",
+        original,
+        cache_dir=tmp_path / "cache",
+    )
+    before = cached.read_bytes()
+
+    result = populations.register(
+        "landscan-global:2024",
+        cached,
+        cache_dir=tmp_path / "cache",
+    )
+
+    assert result == cached
+    assert result.read_bytes() == before
+
+
+def test_registration_size_limit_is_enforced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "landscan-global")
+    original = write_population(tmp_path / "landscan-global-2024.tif", year=2024)
+    monkeypatch.setattr(_api, "_MAX_REGISTERED_BYTES", 1)
+
+    with pytest.raises(ValueError, match="registration safety limit"):
+        populations.register(
+            "landscan-global:2024",
+            original,
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_string_path_and_memory_reader_remain_custom_sources(
+    tmp_path: Path,
+) -> None:
+    population = write_population(tmp_path / "population.tif")
+
+    resolved = _api.resolve_for_assignment(str(population))
+    with rasterio.open(population) as reader:
+        metadata = _api.metadata_for_reader(resolved, reader, total=10.0)
+    assert metadata["source_id"] == "custom"
+    assert metadata["local_sha256"]
+
+    profile = {
+        "driver": "GTiff",
+        "width": 2,
+        "height": 2,
+        "count": 1,
+        "dtype": "float64",
+        "crs": "EPSG:4326",
+        "transform": from_origin(0, 2, 1, 1),
+        "nodata": -9999,
+    }
+    with MemoryFile() as memory:
+        with memory.open(**profile) as writer:
+            writer.write(np.ones((2, 2)), 1)
+        with memory.open() as reader:
+            reader_resolved = _api.resolve_for_assignment(reader)
+            reader_metadata = _api.metadata_for_reader(
+                reader_resolved,
+                reader,
+                total=4.0,
+            )
+            assert "local_sha256" not in reader_metadata
+
+
+def test_download_and_register_lock_timeouts_are_actionable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+
+    class FailingLock:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            raise Timeout("test.lock")
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr(_api, "FileLock", FailingLock)
+    with pytest.raises(ValueError, match="Timed out waiting"):
+        populations.download(
+            "worldpop-global-1km:2020",
+            cache_dir=tmp_path / "cache",
+        )
+
+    original = write_population(tmp_path / "worldpop-global-1km-2020.tif")
+    with pytest.raises(ValueError, match="Timed out waiting"):
+        populations.register(
+            "worldpop-global-1km:2020",
+            original,
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_chambers_refreshes_source_and_cleans_failed_derivation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "chambers-hybrid")
+    raw = tmp_path / "source.nc"
+    raw.write_bytes(b"invented source")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(raw, calls))
+
+    def derive(source_path: Path, output_path: Path, year: int) -> None:
+        write_population(output_path, year=year)
+
+    monkeypatch.setattr(_api, "derive_chambers_year", derive)
+    cache = tmp_path / "cache"
+    populations.download("chambers-hybrid:2020", cache_dir=cache)
+    populations.download(
+        "chambers-hybrid:2020",
+        cache_dir=cache,
+        refresh=True,
+    )
+    assert len(calls) == 2
+
+    def fail_derive(source_path: Path, output_path: Path, year: int) -> None:
+        output_path.write_text("partial")
+        raise ValueError("bad source structure")
+
+    monkeypatch.setattr(_api, "derive_chambers_year", fail_derive)
+    with pytest.raises(ValueError, match="bad source structure"):
+        populations.download("chambers-hybrid:2019", cache_dir=cache)
+    assert not tuple(cache.rglob("chambers-hybrid-2019.tif.partial"))
+
+
+def test_chambers_offline_without_shared_source_fails_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "chambers-hybrid")
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        lambda *args, **kwargs: pytest.fail("network called"),
+    )
+
+    with pytest.raises(ValueError, match="made no network request"):
+        populations.download(
+            "chambers-hybrid:2020",
+            cache_dir=tmp_path / "cache",
+            offline=True,
+        )
+
+
+def test_chambers_shared_source_lock_timeout_is_actionable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "chambers-hybrid")
+    real_file_lock = _api.FileLock
+
+    class FailingSourceLock:
+        def __enter__(self):
+            raise Timeout("source.lock")
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    def selective_lock(path, *, timeout):
+        if Path(path).parent.name == "source":
+            return FailingSourceLock()
+        return real_file_lock(path, timeout=timeout)
+
+    monkeypatch.setattr(_api, "FileLock", selective_lock)
+    with pytest.raises(ValueError, match="Chambers source"):
+        populations.download(
+            "chambers-hybrid:2020",
+            cache_dir=tmp_path / "cache",
+        )
+
+
+def test_archive_expansion_limit_is_enforced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = use_tiny_source(
+        monkeypatch,
+        "ghsl-r2023a-mollweide-1km",
+        delivery="zip",
+    )
+    member = source.archive_member(2020)
+    assert member is not None
+    archive = tmp_path / "ghsl.zip"
+    with ZipFile(archive, "w") as output:
+        output.writestr(member, b"larger than one byte")
+    monkeypatch.setattr(_api, "_MAX_EXTRACTED_BYTES", 1)
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(archive, []))
+
+    with pytest.raises(ValueError, match="extraction safety limit"):
+        populations.download(
+            "ghsl-r2023a-mollweide-1km:2020",
+            cache_dir=tmp_path / "cache",
+        )

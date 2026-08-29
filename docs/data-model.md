@@ -20,8 +20,8 @@ hazard values, and fractional population. Neither input is mutated.
 ## Vector assignment
 
 A vector hazard is a `GeoDataFrame` or a local GeoJSON, Shapefile, or GeoPackage
-path. The population input is a local one-band population-count GeoTIFF or an
-open Rasterio reader.
+path. The population input is an exact catalog selection, a local one-band
+population-count GeoTIFF, or an open Rasterio reader.
 
 The hazard CRS and population CRS are required. A working copy of the polygons
 is reprojected to the population CRS. Exactextract weights each population cell
@@ -40,12 +40,12 @@ together without accounting for duplicated areas.
 
 ## Raster assignment
 
-A raster hazard and its population input are local GeoTIFF paths or open
-Rasterio readers. Both need a CRS, a finite invertible transform, positive
-dimensions, and finite bounds. The population raster must have exactly one band
-of finite, non-negative counts. Nodata may be finite or NaN and is excluded.
-Metadata that explicitly identifies density is rejected because density cannot
-be silently treated as count.
+A raster hazard is a local GeoTIFF path or open Rasterio reader. Its population
+input may also be an exact catalog selection. Both rasters need a CRS, a finite
+invertible transform, positive dimensions, and finite bounds. The population
+raster must have exactly one band of finite, non-negative counts. Nodata may be
+finite or NaN and is excluded. Metadata that explicitly identifies density is
+rejected because density cannot be silently treated as count.
 
 The result is a `RasterAssignment`, not a cell-per-row table. It records the
 hazard grid and selected one-based band. `read()` returns paired NumPy masked
@@ -64,12 +64,36 @@ footprint, the aligned total, the tolerance, and the resampling method.
 Population outside the hazard extent is intentionally excluded. Areas in the
 hazard grid without valid population remain masked.
 
+Catalog results also record a `population_source` mapping with the exact source
+ID, release, year, DOI, citation, license, population meaning, local SHA-256,
+observed raster facts, and processing note. Vector results use the same mapping.
+Custom raster paths and caller-owned readers record only observed facts, path
+and hash where available, and do not infer publisher or legal metadata.
+
 Single-band hazards select band 1. Multiband hazards require `hazard_band`.
 Path inputs are closed after each operation. Caller-owned readers remain open;
 they must stay open for later reads from a result that refers to them.
 
+## Catalog resolution
+
+Catalog selections use the exact grammar `source-id:YYYY`. Existing files are
+handled as paths before catalog parsing. A missing path-like value fails as a
+path unless it exactly uses catalog grammar. Bare source names, `latest`,
+unsupported years, and malformed selections fail with guidance.
+
+Automatic sources stream official files to a partial path and install only
+after source-specific grid, count, year, value, size, and checksum checks.
+Verified cache entries are grouped by source, release, and year. Adjacent JSON
+receipts identify the installed bytes. Offline mode never makes a network call.
+
+Chambers annual rasters are derived by reading one requested year's 21 age
+bands from the shared NetCDF-4 source in bounded windows. LandScan is never
+downloaded automatically: the caller acquires it from ORNL and `register()`
+copies and validates it without mutating the original.
+
 ## Caller-owned analysis
 
 The package does not define hazard bands or categories, calculate grouped
-totals or shares, download population data, or choose precedence for overlapping
-features. Use pandas, NumPy, or xarray for those decisions after assignment.
+totals or shares, convert density to counts, or choose precedence for
+overlapping features. Use pandas, NumPy, or xarray for those decisions after
+assignment.

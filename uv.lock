@@ -1156,10 +1156,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "exactextract" },
+    { name = "filelock" },
     { name = "geopandas" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
+    { name = "platformdirs" },
     { name = "pyogrio" },
     { name = "rasterio" },
     { name = "shapely" },
@@ -1187,9 +1189,11 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "exactextract", specifier = ">=0.3.0" },
+    { name = "filelock", specifier = ">=3.16" },
     { name = "geopandas", specifier = ">=1.1.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },
+    { name = "platformdirs", specifier = ">=4.3" },
     { name = "pyogrio", specifier = ">=0.13.0" },
     { name = "rasterio", specifier = ">=1.4.4,<1.5" },
     { name = "shapely", specifier = ">=2.1.0" },

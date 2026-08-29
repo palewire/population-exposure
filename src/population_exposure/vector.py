@@ -39,9 +39,23 @@ def assign_vector_population(
     if not allow_overlaps:
         _reject_overlaps(source)
 
-    population_source = normalize_raster_source(population, parameter="population")
+    from population_exposure.populations._api import (
+        metadata_for_reader,
+        resolve_for_assignment,
+    )
+
+    resolved_population = resolve_for_assignment(population)
+    population_source = normalize_raster_source(
+        resolved_population.source,
+        parameter="population",
+    )
     with open_raster(population_source, parameter="population") as population_reader:
-        validate_population_raster(population_reader)
+        population_total = validate_population_raster(population_reader)
+        population_metadata = metadata_for_reader(
+            resolved_population,
+            population_reader,
+            total=population_total,
+        )
         working = source.to_crs(population_reader.crs)
         working[_ROW_ID] = np.arange(len(working), dtype=np.int64)
         summary = cast(
@@ -68,6 +82,7 @@ def assign_vector_population(
             "population_band": 1,
             "overlaps_allowed": allow_overlaps,
         },
+        "population_source": population_metadata,
     }
     return result
 
