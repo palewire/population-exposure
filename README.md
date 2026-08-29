@@ -1,8 +1,8 @@
 # population-exposure
 
-`population-exposure` is a small pandas-first library for totaling population
-weights across ordered hazard bands. It joins tables on exact cell keys and can
-calculate totals globally or for groups supplied by the caller.
+`population-exposure` is a small pandas-first library that assigns a population
+value to each hazard row. It handles the exact-key join and input checks, then
+leaves categories, totals, shares, pivots, and charts to pandas.
 
 ## Install
 
@@ -14,100 +14,83 @@ Python 3.11 or newer is required.
 
 ## Public API
 
-The package exports three symbols:
+The package exports one function:
 
-```text
-ExposureBand(
-    id: str,
-    lower_bound: float | None,
-    upper_bound: float | None,
-    label: str | None = None,
-)
-
-ExposureBands(bands: tuple[ExposureBand, ...])
-
-calculate_exposure(
+```python
+def assign_population(
     hazard: pd.DataFrame,
     population: pd.DataFrame,
     *,
-    bands: ExposureBands,
-    hazard_column: str,
-    population_column: str = "population",
     cell_columns: Sequence[str] = ("longitude", "latitude"),
-    group_by: str | Sequence[str] | None = None,
-) -> pd.DataFrame
+    population_column: str = "population",
+) -> pd.DataFrame: ...
 ```
 
-Use `ExposureBands.from_breaks(...)` for the common case, or construct
-`ExposureBand` objects directly when the bounds already exist.
+The named population column is both the source column in `population` and the
+new output column.
 
-## Global example
+## Example
 
 ```python
 import pandas as pd
 
-from population_exposure import ExposureBands, calculate_exposure
+from population_exposure import assign_population
 
 hazard = pd.DataFrame(
     {
-        "longitude": [10.0, 11.0, 12.0],
-        "latitude": [20.0, 20.0, 20.0],
-        "temperature": [-3.0, 0.0, 4.0],
+        "cell": ["A", "B", "C", "D"],
+        "county": ["North", "North", "South", "South"],
+        "severity": ["warning", "watch", "warning", pd.NA],
     }
 )
 population = pd.DataFrame(
     {
-        "longitude": [10.0, 11.0, 12.0],
-        "latitude": [20.0, 20.0, 20.0],
-        "population": [100.0, 200.0, 50.0],
+        "cell": ["D", "B", "A", "C"],
+        "population": [400.5, 200.0, 100.0, 300.25],
     }
 )
-bands = ExposureBands.from_breaks(
-    [-2.0, 2.0],
-    ids=("below", "near", "above"),
-)
 
-result = calculate_exposure(
-    hazard,
-    population,
-    bands=bands,
-    hazard_column="temperature",
-)
+exposed = assign_population(hazard, population, cell_columns="cell")
 ```
 
-Values exactly on a break enter the higher band. Every band appears in the
-result, including bands with zero population.
+`exposed` contains the original rows and columns, in their original order, plus
+the assigned population:
 
-## Grouped example
+| cell | county | severity | population |
+|---|---|---|---:|
+| A | North | warning | 100.0 |
+| B | North | watch | 200.0 |
+| C | South | warning | 300.25 |
+| D | South | missing | 400.5 |
 
-Add a column to the population table and name it with `group_by`:
+Use ordinary pandas operations for analysis:
 
 ```python
-population["region"] = ["west", "central", "east"]
-
-regional = calculate_exposure(
-    hazard,
-    population,
-    bands=bands,
-    hazard_column="temperature",
-    group_by="region",
-)
+total = exposed["population"].sum()
+by_county = exposed.groupby("county")["population"].sum()
+by_severity = exposed.groupby("severity", dropna=False)["population"].sum()
+county_severity = exposed.groupby(["county", "severity"], dropna=False)[
+    "population"
+].sum()
 ```
 
-Groups may overlap: the same cell can appear in several groups, but not twice
-within one group. Each group is valid on its own; overlapping group totals are
-not additive.
+## Behavior
 
-## Failure behavior
+Cell keys are matched exactly as supplied; they are never rounded or
+normalized. Every hazard row must match one population row. Extra population
+rows are allowed, which lets callers assign population to a subset of a larger
+grid.
 
-Cell and group keys are matched exactly. Missing keys, null keys, duplicate
-cells, unmatched population cells, and invalid population weights raise clear
-errors. Missing or infinite hazard values are excluded from both band totals
-and represented population. The input data frames are never changed.
+The function preserves every hazard column, row order, index, missing hazard
+values, and fractional population values. It does not mutate either input.
+Missing columns, null keys, duplicate keys, unmatched hazard rows, and
+non-numeric, non-finite, or negative population values raise clear errors.
 
-The package does not perform spatial assignment, coordinate conversion,
-longitude normalization, population splitting, full-grid checks, or file
-loading. See [the data model](docs/data-model.md) for complete semantics.
+The package does not define hazard categories or calculate grouped summaries.
+It also does not load files, process spatial data, convert coordinates, or
+check that a grid is complete. See [the data model](docs/data-model.md) for
+complete tabular semantics. Vector and raster assignment can build on the same
+row-level result in future work.
 
 ## Development
 

@@ -2,9 +2,9 @@
 
 ## Scope
 
-This repository provides a small pandas-first library for calculating
-population totals across ordered hazard bands. Keep the runtime dependencies
-limited to NumPy and pandas.
+This repository provides a small pandas-first library for assigning population
+values to hazard rows by exact cell keys. Keep the runtime dependencies limited
+to NumPy and pandas.
 
 Do not add command-line tools, file loading, spatial processing, coordinate
 conversion, caching, parallelism, plugins, or compatibility layers without a

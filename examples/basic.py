@@ -1,34 +1,23 @@
-"""Calculate exposure totals for a tiny invented grid."""
+"""Assign population to a tiny invented hazard table."""
 
 import pandas as pd
 
-from population_exposure import ExposureBands, calculate_exposure
+from population_exposure import assign_population
 
 hazard = pd.DataFrame(
     {
-        "longitude": [10.0, 11.0, 12.0],
-        "latitude": [20.0, 20.0, 20.0],
-        "temperature": [-3.0, 0.0, 4.0],
+        "cell": ["A", "B", "C", "D"],
+        "county": ["North", "North", "South", "South"],
+        "severity": ["warning", "watch", "warning", "advisory"],
     }
 )
 population = pd.DataFrame(
     {
-        "longitude": [10.0, 11.0, 12.0],
-        "latitude": [20.0, 20.0, 20.0],
-        "population": [100.0, 200.0, 50.0],
+        "cell": ["D", "B", "A", "C"],
+        "population": [400.5, 200.0, 100.0, 300.25],
     }
 )
-bands = ExposureBands.from_breaks(
-    [-2.0, 2.0],
-    ids=("below", "near", "above"),
-    labels=("Below -2", "-2 to 2", "At least 2"),
-)
 
-print(
-    calculate_exposure(
-        hazard,
-        population,
-        bands=bands,
-        hazard_column="temperature",
-    )
-)
+exposed = assign_population(hazard, population, cell_columns="cell")
+print(exposed)
+print(exposed.groupby("severity")["population"].sum())

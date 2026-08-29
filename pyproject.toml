@@ -11,7 +11,7 @@ dependencies = [
     "pandas>=2.2",
 ]
 authors = [{ name = "Ben Welsh", email = "b@palewi.re" }]
-description = "Calculate population totals across ordered hazard bands"
+description = "Assign population values to hazard data"
 keywords = ["hazards", "pandas", "population"]
 license = "MIT"
 license-files = ["LICENSE"]

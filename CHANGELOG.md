@@ -8,9 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Add the first public API for defining exposure bands and calculating global
-  or grouped population exposure from pandas data frames.
-- Add complete validation, examples, plain-language documentation, property
-  tests, and package build checks.
+- Add `assign_population()` for joining population values to tabular hazard rows
+  by exact cell keys.
+- Add validation, examples, plain-language documentation, property tests, and
+  package build checks for population assignment.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main

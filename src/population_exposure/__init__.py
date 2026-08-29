@@ -1,6 +1,5 @@
-"""Calculate population totals across ordered hazard bands."""
+"""Assign population values to hazard rows."""
 
-from population_exposure.bands import ExposureBand, ExposureBands
-from population_exposure.calculate import calculate_exposure
+from population_exposure.assignment import assign_population
 
-__all__ = ["ExposureBand", "ExposureBands", "calculate_exposure"]
+__all__ = ["assign_population"]
