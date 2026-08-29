@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 from rasterio.windows import Window
@@ -199,6 +199,20 @@ def compare_gpw_fine_to_coarse(
     )
 
 
+@overload
+def _float64_sum_error_bound(
+    absolute_sums: float,
+    terms: int,
+) -> float: ...
+
+
+@overload
+def _float64_sum_error_bound(
+    absolute_sums: np.ndarray,
+    terms: int,
+) -> np.ndarray: ...
+
+
 def _float64_sum_error_bound(
     absolute_sums: float | np.ndarray,
     terms: int,
@@ -219,7 +233,10 @@ def _float64_sum_error_bound(
     operations = max(terms - 1, 0)
     unit_roundoff = np.finfo(np.float64).eps
     gamma = operations * unit_roundoff / (1 - operations * unit_roundoff)
-    return np.nextafter(np.asarray(absolute_sums) * gamma * (1 + gamma), np.inf)
+    bound = np.nextafter(absolute_sums * gamma * (1 + gamma), np.inf)
+    if isinstance(absolute_sums, np.ndarray):
+        return bound
+    return float(bound)
 
 
 def _aligned_aggregation_shape(

@@ -18,6 +18,7 @@ from tests.live_downloads import (
     LANDSCAN,
     SCHEDULED_PROVIDERS,
     WORLDPOP,
+    _float64_sum_error_bound,
     compare_gpw_fine_to_coarse,
     download_failure_phase,
     gpw_coarse_oracle,
@@ -110,6 +111,18 @@ def test_gpw_parity_sums_exactly_aligned_tiny_fine_cells(
     assert parity.maximum_tolerance_normalized_difference == 0
     assert parity.maximum_ulp_normalized_difference == 0
     assert parity.aggregate_difference == 0
+
+
+def test_gpw_summation_error_bound_preserves_scalar_and_array_inputs() -> None:
+    scalar_bound = _float64_sum_error_bound(100.0, 4)
+    array_bound = _float64_sum_error_bound(np.array([100.0, 200.0]), 4)
+
+    assert isinstance(scalar_bound, float)
+    assert scalar_bound > 0
+    assert isinstance(array_bound, np.ndarray)
+    assert array_bound.shape == (2,)
+    assert np.all(array_bound > 0)
+    assert array_bound[1] == pytest.approx(2 * array_bound[0])
 
 
 def test_gpw_parity_allows_official_float32_publisher_quantization(
