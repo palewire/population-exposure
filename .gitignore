@@ -2,6 +2,11 @@
 .claude
 .goals
 
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -108,5 +113,5 @@ venv.bak/
 # ruff
 .ruff_cache/
 
-# pip and uv
-./build/
+# ty
+.ty/

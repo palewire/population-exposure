@@ -1,5 +1,5 @@
 {
-  "name": "Python Open Source Template",
+  "name": "population-exposure",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {

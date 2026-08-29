@@ -1,31 +1,11 @@
-# Instantiating This Template
+# Repository setup
 
-Complete this checklist before the first release.
+The package metadata, source layout, typed marker, tests, and documentation
+have been configured for `population-exposure`.
 
-## Package
+Before the first release:
 
-- [ ] Replace placeholder metadata in `pyproject.toml`.
-- [ ] Create `src/<package_name>/` and enable setuptools package discovery.
-- [ ] Set coverage source, ty include path, and the Click entry point if needed.
-- [ ] Add `py.typed` when the package exposes typed public APIs.
-
-## Documentation
-
-- [ ] Replace the distribution placeholder and set `html_baseurl` to the
-      production documentation URL in `docs/conf.py`. The `palewire` extension
-      derives the canonical theme URL from it and provides the `wide` layout and
-      `sidebar` navigation presets, which you can adjust for the project.
-- [ ] Add an autosummary-based API reference for public modules.
-- [ ] Configure S3 deployment through the protected `docs-production`
-      environment, AWS OIDC variables, and `DOCS_DEPLOY_ENABLED=true`.
-
-## Continuous Integration
-
-- [ ] Set the `PACKAGE_IMPORT_NAME` repository variable to the package import
-      name. This enables wheel-import and coverage checks in CI.
-- [ ] Configure required checks and review rules for the default branch.
-
-## Release
-
-- [ ] Review `RELEASING.md` and verify the PyPI publication configuration.
-- [ ] Confirm `CHANGELOG.md` and issue/PR templates match the project workflow.
+- [ ] Configure required checks and review rules for `main`.
+- [ ] Review the package publishing settings and trusted publisher.
+- [ ] Move the `Unreleased` changelog entries into a dated release section.
+- [ ] Obtain explicit approval before creating a tag, release, or publication.
