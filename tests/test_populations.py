@@ -212,6 +212,46 @@ def test_anonymous_download_writes_receipt_and_uses_cache(
     assert "_verified_mtime_ns" in receipt
 
 
+def test_direct_download_reuses_downloader_digest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    expected_digest = sha256_file(fixture)
+
+    def download_raster(
+        url,
+        partial_path,
+        *,
+        headers,
+        max_bytes,
+        exact_bytes,
+        publisher_checksum,
+    ):
+        del url, headers, max_bytes, exact_bytes, publisher_checksum
+        partial_path.write_bytes(fixture.read_bytes())
+        return DownloadResult(
+            size=partial_path.stat().st_size,
+            sha256=expected_digest,
+        )
+
+    monkeypatch.setattr(_api, "download_file", download_raster)
+    monkeypatch.setattr(
+        _api,
+        "sha256_file",
+        lambda path: pytest.fail(f"Direct raster was rehashed: {path.name}"),
+    )
+
+    result = populations.download(
+        "worldpop-global-1km:2020",
+        cache_dir=tmp_path / "cache",
+    )
+
+    receipt = json.loads(result.with_suffix(".tif.json").read_text())
+    assert receipt["local_sha256"] == expected_digest
+
+
 def test_refresh_replaces_a_verified_cache_entry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -386,9 +426,10 @@ def test_offline_valid_cache_skips_network(
     assert len(calls) == 1
 
 
-def test_gpw_uses_transient_earthdata_token_only(
+def test_gpw_forwards_explicit_earthdata_token_without_exposing_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     source = use_tiny_source(monkeypatch, "gpwv4-r11-count", delivery="zip")
     fixture = write_population(tmp_path / "fixture-2020.tif")
@@ -397,19 +438,70 @@ def test_gpw_uses_transient_earthdata_token_only(
     assert member is not None
     with ZipFile(archive, "w") as output:
         output.write(fixture, arcname=f"folder/{member}")
-    calls: list[dict[str, object]] = []
-    monkeypatch.setattr(_api, "download_file", fake_downloader_from(archive, calls))
+    token = "caller-earthdata-token"
+    expected_authorization = "Bearer " + token
+    received_authorization: list[bool] = []
+
+    def download_archive(
+        url,
+        partial_path,
+        *,
+        headers,
+        max_bytes,
+        exact_bytes,
+        publisher_checksum,
+    ):
+        del url, max_bytes, exact_bytes, publisher_checksum
+        received_authorization.append(
+            headers == {"Authorization": expected_authorization}
+        )
+        partial_path.write_bytes(archive.read_bytes())
+        return DownloadResult(
+            size=partial_path.stat().st_size,
+            sha256=sha256_file(partial_path),
+        )
+
+    monkeypatch.setattr(_api, "download_file", download_archive)
 
     result = populations.download(
         "gpwv4-r11-count:2020",
         cache_dir=tmp_path / "cache",
-        earthdata_token="user-owned-token",  # noqa: S106
+        earthdata_token=token,
     )
 
-    assert calls[0]["headers"] == {"Authorization": "Bearer user-owned-token"}
     receipt_text = result.with_suffix(".tif.json").read_text()
-    assert "user-owned-token" not in receipt_text
+    assert received_authorization == [True]
     assert "transient user-owned token" in receipt_text
+
+    def reject_download(
+        url,
+        partial_path,
+        *,
+        headers,
+        max_bytes,
+        exact_bytes,
+        publisher_checksum,
+    ):
+        del url, partial_path, max_bytes, exact_bytes, publisher_checksum
+        received_authorization.append(
+            headers == {"Authorization": expected_authorization}
+        )
+        raise ValueError("publisher rejected the request")
+
+    monkeypatch.setattr(_api, "download_file", reject_download)
+    with pytest.raises(ValueError, match="publisher rejected") as error:
+        populations.download(
+            "gpwv4-r11-count:2020",
+            cache_dir=tmp_path / "cache",
+            earthdata_token=token,
+            refresh=True,
+        )
+
+    assert received_authorization == [True, True]
+    token_is_not_disclosed = all(
+        token not in text for text in (receipt_text, str(error.value), caplog.text)
+    )
+    assert token_is_not_disclosed
 
 
 def test_gpw_requires_a_user_token_before_network(
@@ -749,6 +841,59 @@ def test_ghsl_archive_download_extracts_only_the_expected_member(
     assert "extracted the exact population-count GeoTIFF" in receipt
 
 
+def test_archive_download_hashes_the_extracted_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = use_tiny_source(
+        monkeypatch,
+        "ghsl-r2023a-mollweide-1km",
+        delivery="zip",
+    )
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    archive = tmp_path / "ghsl.zip"
+    member = source.archive_member(2020)
+    assert member is not None
+    with ZipFile(archive, "w") as output:
+        output.write(fixture, arcname=member)
+    archive_digest = sha256_file(archive)
+    member_digest = sha256_file(fixture)
+    hashed_paths: list[Path] = []
+    original_sha256_file = _api.sha256_file
+
+    def hash_extracted_member(path: Path) -> str:
+        hashed_paths.append(path)
+        return original_sha256_file(path)
+
+    def download_archive(
+        url,
+        partial_path,
+        *,
+        headers,
+        max_bytes,
+        exact_bytes,
+        publisher_checksum,
+    ):
+        del url, headers, max_bytes, exact_bytes, publisher_checksum
+        partial_path.write_bytes(archive.read_bytes())
+        return DownloadResult(
+            size=partial_path.stat().st_size,
+            sha256=archive_digest,
+        )
+
+    monkeypatch.setattr(_api, "sha256_file", hash_extracted_member)
+    monkeypatch.setattr(_api, "download_file", download_archive)
+
+    result = populations.download(
+        "ghsl-r2023a-mollweide-1km:2020",
+        cache_dir=tmp_path / "cache",
+    )
+
+    receipt = json.loads(result.with_suffix(".tif.json").read_text())
+    assert hashed_paths == [result.with_name(f"{result.name}.partial")]
+    assert receipt["local_sha256"] == member_digest
+
+
 def test_bad_archive_member_and_invalid_direct_raster_are_cleaned_up(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -786,7 +931,7 @@ def test_bad_archive_member_and_invalid_direct_raster_are_cleaned_up(
     assert not tuple(cache.rglob("*.partial"))
 
 
-def test_earthdata_environment_token_and_empty_token_handling(
+def test_earthdata_environment_token_is_forwarded(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -797,21 +942,65 @@ def test_earthdata_environment_token_and_empty_token_handling(
     assert member is not None
     with ZipFile(archive, "w") as output:
         output.write(fixture, arcname=member)
-    calls: list[dict[str, object]] = []
-    monkeypatch.setattr(_api, "download_file", fake_downloader_from(archive, calls))
-    monkeypatch.setenv("EARTHDATA_TOKEN", "environment-token")
+    token = "environment-earthdata-token"
+    expected_authorization = "Bearer " + token
+    received_authorization: list[bool] = []
+
+    def download_archive(
+        url,
+        partial_path,
+        *,
+        headers,
+        max_bytes,
+        exact_bytes,
+        publisher_checksum,
+    ):
+        del url, max_bytes, exact_bytes, publisher_checksum
+        received_authorization.append(
+            headers == {"Authorization": expected_authorization}
+        )
+        partial_path.write_bytes(archive.read_bytes())
+        return DownloadResult(
+            size=partial_path.stat().st_size,
+            sha256=sha256_file(partial_path),
+        )
+
+    monkeypatch.setattr(_api, "download_file", download_archive)
+    monkeypatch.setenv("EARTHDATA_TOKEN", token)
 
     populations.download(
         "gpwv4-r11-count:2020",
         cache_dir=tmp_path / "cache",
     )
-    assert calls[0]["headers"] == {"Authorization": "Bearer environment-token"}
+    assert received_authorization == [True]
 
-    monkeypatch.setenv("EARTHDATA_TOKEN", " ")
+
+@pytest.mark.parametrize(
+    ("earthdata_token", "environment_token"),
+    [
+        (" ", "environment-earthdata-token"),
+        (None, " \t"),
+    ],
+)
+def test_earthdata_whitespace_tokens_fail_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    earthdata_token: str | None,
+    environment_token: str,
+) -> None:
+    use_tiny_source(monkeypatch, "gpwv4-r11-count", delivery="zip")
+    monkeypatch.setenv("EARTHDATA_TOKEN", environment_token)
+    monkeypatch.setattr(
+        _api,
+        "download_file",
+        lambda *args, **kwargs: pytest.fail("network called"),
+    )
+
     with pytest.raises(ValueError, match="requires your Earthdata token"):
         populations.download(
-            "gpwv4-r11-count:2015",
+            "gpwv4-r11-count:2020",
             cache_dir=tmp_path / "cache",
+            earthdata_token=earthdata_token,
         )
 
 
