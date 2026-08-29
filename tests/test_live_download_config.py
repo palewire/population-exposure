@@ -159,13 +159,20 @@ def test_live_workflow_is_manual_or_monthly_and_never_pr_ci() -> None:
     assert "pull_request:" not in workflow
     assert "\n  push:" not in workflow
     assert "${{ inputs.provider || 'scheduled' }}" in workflow
-    assert "EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}" in workflow
     assert "tests/test_live_downloads.py" in workflow
     assert "uv python install 3.13" in workflow
     assert "timeout-minutes: 300" in workflow
     for choice in ("scheduled", *DOWNLOADABLE_PROVIDERS):
         assert f"          - {choice}" in workflow
     assert "          - all" not in workflow
+    before_test, test_step = workflow.split(
+        "      - name: Download, validate, receipt, and reuse offline",
+        maxsplit=1,
+    )
+    assert "EARTHDATA_TOKEN:" not in before_test
+    assert "EARTHDATA_TOKEN:" in test_step
+    assert "secrets.EARTHDATA_TOKEN" in test_step
+    assert "inputs.provider == 'gpwv4-r11-count'" in test_step
 
 
 def _write_count_grid(path: Path, values: np.ndarray, transform) -> Path:

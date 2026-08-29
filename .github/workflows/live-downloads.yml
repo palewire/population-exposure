@@ -30,7 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
-      EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
       POPULATION_EXPOSURE_LIVE_PROVIDERS: ${{ inputs.provider || 'scheduled' }}
     steps:
       - name: Checkout
@@ -51,14 +50,6 @@ jobs:
       - name: Install test dependencies
         run: make install-test UV_PYTHON=3.13
 
-      - name: Require Earthdata credentials when requested
-        shell: bash
-        run: |
-          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "gpwv4-r11-count" ]] && [[ -z "$EARTHDATA_TOKEN" ]]; then
-            echo "::error title=Missing EARTHDATA_TOKEN::Manual GPW coverage requires the EARTHDATA_TOKEN repository secret."
-            exit 1
-          fi
-
       - name: Confirm runner disk space
         shell: bash
         run: |
@@ -73,6 +64,8 @@ jobs:
           fi
 
       - name: Download, validate, receipt, and reuse offline
+        env:
+          EARTHDATA_TOKEN: ${{ inputs.provider == 'gpwv4-r11-count' && secrets.EARTHDATA_TOKEN || '' }}
         run: uv run pytest -m live tests/test_live_downloads.py
 
       - name: Prune uv cache
