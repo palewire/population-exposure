@@ -23,7 +23,7 @@ def assign_population(
     hazard: pd.DataFrame,
     population: pd.DataFrame,
     *,
-    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
 ) -> pd.DataFrame:
     """Return the hazard rows with population assigned by exact cell keys."""

@@ -21,7 +21,7 @@ def assign_population(
     hazard: pd.DataFrame,
     population: pd.DataFrame,
     *,
-    cell_columns: Sequence[str] = ("longitude", "latitude"),
+    cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
 ) -> pd.DataFrame: ...
 ```
@@ -61,7 +61,7 @@ the assigned population:
 | A | North | warning | 100.0 |
 | B | North | watch | 200.0 |
 | C | South | warning | 300.25 |
-| D | South | missing | 400.5 |
+| D | South | `<NA>` | 400.5 |
 
 Use ordinary pandas operations for analysis:
 
