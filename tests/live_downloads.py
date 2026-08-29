@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import numpy as np
+from rasterio.windows import Window
 
 from population_exposure import populations
+
+if TYPE_CHECKING:
+    from rasterio.io import DatasetReader
 
 WORLDPOP = "worldpop-global-1km"
 GHSL = "ghsl-r2023a-mollweide-1km"
@@ -14,8 +22,25 @@ LANDSCAN = "landscan-global"
 
 SCHEDULED_PROVIDERS = (WORLDPOP, GHSL)
 DOWNLOADABLE_PROVIDERS = (WORLDPOP, GHSL, GPW, CHAMBERS)
-MANUAL_CHOICES = ("scheduled", *DOWNLOADABLE_PROVIDERS, "all")
+MANUAL_CHOICES = ("scheduled", *DOWNLOADABLE_PROVIDERS)
 _LIVE_PROVIDERS_ENV = "POPULATION_EXPOSURE_LIVE_PROVIDERS"
+
+
+@dataclass(frozen=True, slots=True)
+class GpwCoarseOracle:
+    """The official one-degree GPW count raster paired with a fine selection."""
+
+    selection: str
+    official_url: str
+    archive_member: str
+
+
+@dataclass(frozen=True, slots=True)
+class GpwParityResult:
+    """The result of comparing GPW's fine cells against its coarse count cells."""
+
+    compared_cells: int
+    maximum_absolute_difference: float
 
 
 def providers_for_run(value: str | None = None) -> tuple[str, ...]:
@@ -26,8 +51,6 @@ def providers_for_run(value: str | None = None) -> tuple[str, ...]:
     normalized = choice.strip().lower()
     if normalized == "scheduled":
         return SCHEDULED_PROVIDERS
-    if normalized == "all":
-        return DOWNLOADABLE_PROVIDERS
     if normalized in DOWNLOADABLE_PROVIDERS:
         return (normalized,)
     choices = ", ".join(MANUAL_CHOICES)
@@ -43,6 +66,113 @@ def selection_for_provider(source_id: str) -> str:
     if source is None or source_id not in DOWNLOADABLE_PROVIDERS:
         raise ValueError(f"{source_id!r} is not an approved live-download provider.")
     return f"{source.source_id}:{max(source.supported_years)}"
+
+
+def gpw_coarse_oracle(selection: str) -> GpwCoarseOracle:
+    """Derive GPW's official one-degree count archive from catalog metadata."""
+    selected = populations.info(selection)
+    if selected.source_id != GPW:
+        raise ValueError(f"{selection!r} is not a GPW population-count selection.")
+    fine_archive = f"_{selected.year}_30_sec_tif.zip"
+    fine_member = "_30_sec.tif"
+    if not selected.official_url.endswith(fine_archive):
+        raise ValueError(
+            f"{selection!r} does not use the expected official GPW 30-arc-second archive."
+        )
+    if not selected.expected_filename.endswith(fine_member):
+        raise ValueError(
+            f"{selection!r} does not use the expected GPW 30-arc-second GeoTIFF name."
+        )
+    return GpwCoarseOracle(
+        selection=selection,
+        official_url=(
+            selected.official_url.removesuffix(fine_archive)
+            + f"_{selected.year}_1_deg_tif.zip"
+        ),
+        archive_member=(
+            selected.expected_filename.removesuffix(fine_member) + "_1_deg.tif"
+        ),
+    )
+
+
+def compare_gpw_fine_to_coarse(
+    fine: DatasetReader,
+    coarse: DatasetReader,
+) -> GpwParityResult:
+    """Compare exact one-degree sums from GPW's 30-arc-second count grid."""
+    rows_per_cell, columns_per_cell = _aligned_aggregation_shape(fine, coarse)
+    fine_sums = np.empty((coarse.height, coarse.width), dtype=np.float64)
+    for row in range(coarse.height):
+        fine_row = fine.read(
+            1,
+            window=Window(
+                col_off=0,
+                row_off=row * rows_per_cell,
+                width=fine.width,
+                height=rows_per_cell,
+            ),
+            masked=True,
+        )
+        values = np.asarray(fine_row.filled(0), dtype=np.float64)
+        fine_sums[row] = values.reshape(
+            rows_per_cell,
+            coarse.width,
+            columns_per_cell,
+        ).sum(axis=(0, 2), dtype=np.float64)
+
+    coarse_values = coarse.read(1, masked=True)
+    valid = ~np.ma.getmaskarray(coarse_values)
+    if not np.any(valid):
+        raise ValueError("Official GPW coarse oracle has no valid population cells.")
+    differences = np.abs(
+        fine_sums[valid] - np.asarray(coarse_values.data[valid], dtype=np.float64)
+    )
+    return GpwParityResult(
+        compared_cells=int(np.count_nonzero(valid)),
+        maximum_absolute_difference=float(np.max(differences)),
+    )
+
+
+def _aligned_aggregation_shape(
+    fine: DatasetReader,
+    coarse: DatasetReader,
+) -> tuple[int, int]:
+    """Return cells per side only when both published grids align exactly."""
+    if fine.crs != coarse.crs:
+        raise ValueError("Fine and coarse GPW rasters must use the same CRS.")
+    if fine.width % coarse.width or fine.height % coarse.height:
+        raise ValueError(
+            "Fine GPW dimensions must be whole multiples of the coarse grid."
+        )
+    columns_per_cell = fine.width // coarse.width
+    rows_per_cell = fine.height // coarse.height
+    fine_transform = fine.transform
+    coarse_transform = coarse.transform
+    if not np.allclose(
+        (fine_transform.b, fine_transform.d, coarse_transform.b, coarse_transform.d),
+        (0.0, 0.0, 0.0, 0.0),
+        rtol=0,
+        atol=1e-12,
+    ):
+        raise ValueError("Fine and coarse GPW rasters must be north-up grids.")
+    if not np.allclose(
+        (fine_transform.c, fine_transform.f),
+        (coarse_transform.c, coarse_transform.f),
+        rtol=0,
+        atol=1e-9,
+    ):
+        raise ValueError("Fine and coarse GPW rasters must have the same origin.")
+    if not np.allclose(
+        (
+            fine_transform.a * columns_per_cell,
+            fine_transform.e * rows_per_cell,
+        ),
+        (coarse_transform.a, coarse_transform.e),
+        rtol=0,
+        atol=1e-9,
+    ):
+        raise ValueError("Fine GPW cells do not align exactly with the coarse grid.")
+    return rows_per_cell, columns_per_cell
 
 
 def download_failure_phase(error: Exception) -> str:

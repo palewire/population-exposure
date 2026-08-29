@@ -6,15 +6,19 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
+import rasterio
 
 from population_exposure import populations
 from population_exposure.populations import _api
 from population_exposure.populations._cache import cache_entry, verified_receipt
+from population_exposure.populations._http import download_file
 from population_exposure.populations._raster import validate_catalog_raster
 from population_exposure.populations._sources import SOURCES
 from tests.live_downloads import (
     GPW,
+    compare_gpw_fine_to_coarse,
     download_failure_phase,
+    gpw_coarse_oracle,
     providers_for_run,
     selection_for_provider,
 )
@@ -78,6 +82,9 @@ def test_official_provider_download_is_validated_receipted_and_reused_offline(
     assert receipt["local_size_bytes"] == downloaded.stat().st_size
     assert receipt["observed"] == observed
 
+    if source_id == GPW:
+        _assert_gpw_parity(downloaded, selection, token, tmp_path)
+
     monkeypatch.setattr(
         _api,
         "download_file",
@@ -91,4 +98,42 @@ def test_official_provider_download_is_validated_receipted_and_reused_offline(
         _fail(source_id, selection, "offline cache reuse", error)
     assert cached == downloaded, (
         f"{source_id} ({selection}) offline cache reuse changed paths."
+    )
+
+
+def _assert_gpw_parity(
+    fine_path: Path,
+    selection: str,
+    earthdata_token: str | None,
+    temporary_directory: Path,
+) -> None:
+    """Check official 30-arc-second counts against CIESIN's one-degree counts."""
+    if earthdata_token is None:  # pragma: no cover - guarded by the live test
+        raise ValueError("GPW parity requires an Earthdata token.")
+    oracle = gpw_coarse_oracle(selection)
+    archive_path = temporary_directory / "gpw-coarse.zip"
+    coarse_path = temporary_directory / oracle.archive_member
+    try:
+        download_file(
+            oracle.official_url,
+            archive_path,
+            headers=_api._authentication_headers(SOURCES[GPW], earthdata_token),
+            max_bytes=10_000_000,
+            exact_bytes=None,
+            publisher_checksum=None,
+        )
+        _api._extract_member(archive_path, coarse_path, oracle.archive_member)
+    except (OSError, ValueError) as error:
+        _fail(GPW, selection, "official CIESIN coarse-oracle acquisition", error)
+
+    try:
+        with rasterio.open(fine_path) as fine, rasterio.open(coarse_path) as coarse:
+            parity = compare_gpw_fine_to_coarse(fine, coarse)
+    except (OSError, ValueError) as error:
+        _fail(GPW, selection, "official CIESIN coarse-oracle alignment", error)
+
+    assert parity.compared_cells > 0, f"{GPW} ({selection}) had no comparable cells."
+    assert parity.maximum_absolute_difference <= 1.0, (
+        f"{GPW} ({selection}) fine counts differed from CIESIN's official one-degree "
+        f"counts by {parity.maximum_absolute_difference:.12g} people."
     )

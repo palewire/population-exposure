@@ -14,7 +14,6 @@ on:
           - ghsl-r2023a-mollweide-1km
           - gpwv4-r11-count
           - chambers-hybrid
-          - all
   schedule:
     - cron: "17 5 1 * *"
 
@@ -29,7 +28,7 @@ jobs:
   live-downloads:
     name: Download ${{ inputs.provider || 'scheduled' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 300
     env:
       EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
       POPULATION_EXPOSURE_LIVE_PROVIDERS: ${{ inputs.provider || 'scheduled' }}
@@ -46,13 +45,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      - name: Install Python
+        run: uv python install 3.13
+
       - name: Install test dependencies
         run: make install-test UV_PYTHON=3.13
 
       - name: Require Earthdata credentials when requested
         shell: bash
         run: |
-          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "gpwv4-r11-count" || "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "all" ]] && [[ -z "$EARTHDATA_TOKEN" ]]; then
+          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "gpwv4-r11-count" ]] && [[ -z "$EARTHDATA_TOKEN" ]]; then
             echo "::error title=Missing EARTHDATA_TOKEN::Manual GPW coverage requires the EARTHDATA_TOKEN repository secret."
             exit 1
           fi
@@ -61,7 +63,7 @@ jobs:
         shell: bash
         run: |
           required_kb=8000000
-          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "chambers-hybrid" || "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "all" ]]; then
+          if [[ "$POPULATION_EXPOSURE_LIVE_PROVIDERS" == "chambers-hybrid" ]]; then
             required_kb=20000000
           fi
           available_kb=$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 { print $4 }')

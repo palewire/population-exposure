@@ -320,10 +320,14 @@ each month and can also be started manually. Its scheduled run downloads and
 validates the current catalog selections for anonymous WorldPop and GHSL,
 including receipts and an offline cache reuse.
 
-Manual workflow choices cover WorldPop, GHSL, GPW, Chambers, or all four.
+Manual workflow choices cover WorldPop, GHSL, GPW, and Chambers individually.
 GPW needs the `EARTHDATA_TOKEN` repository secret; the workflow fails before
-downloading if that manual selection has no token. Chambers is manual only
-because its one shared source is 4,122,344,510 bytes. LandScan is excluded:
-its official portal requires registration and license acceptance, and the
-package continues to test local registration with fixtures rather than
-automating or redistributing it.
+downloading if that manual selection has no token. Its manual live test also
+compares sums of exact 30-arc-second source-grid windows against CIESIN's
+official 1-degree GPW population-count grid for the same year, allowing at
+most one person of float accumulation difference. It does not use the
+separate UN-WPP-adjusted product. Chambers is manual only because its one
+shared source is 4,122,344,510 bytes. LandScan is excluded: its official
+portal requires registration and license acceptance, and the package
+continues to test local registration with fixtures rather than automating or
+redistributing it.
