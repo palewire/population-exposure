@@ -58,7 +58,7 @@ def assign_vector_population(
         totals = _ordered_totals(summary, expected_rows=len(working))
         population_crs = population_reader.crs
 
-    result = cast("gpd.GeoDataFrame", source.copy(deep=True))
+    result = source
     result[population_column] = totals
     result.attrs = {
         **source.attrs,
