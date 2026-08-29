@@ -26,10 +26,6 @@ Add tests for behavior changes, including property tests when they express a
 general rule more clearly than examples. Keep documentation and
 `CHANGELOG.md` aligned with public behavior.
 
-Immediately after opening a pull request, request a GitHub Copilot review.
-Before declaring the work complete, reply to and resolve every review comment
-and fix every failing CI check.
-
 Use Ruff for linting and formatting, ty for static type checks, and uv for
 dependency management. Do not commit build output, virtual environments,
 environment files, credentials, or agent scratch files.
