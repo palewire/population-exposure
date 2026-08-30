@@ -356,7 +356,8 @@ select the release tag, and keep the only available target, `testpypi`. Install
 the result with:
 
 ```sh
-pip install --index-url https://test.pypi.org/simple/ population-exposure
+python -m pip install --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ population-exposure
 ```
 
 For PyPI, create a GitHub Release from the exact version tag and publish that
