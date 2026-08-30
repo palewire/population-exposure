@@ -83,17 +83,24 @@ unsupported years, and malformed selections fail with guidance.
 
 Automatic sources stream official files to a partial path and install only
 after source-specific grid, count, year, value, size, and checksum checks.
-Verified cache entries are grouped by source, release, and year. Adjacent JSON
-receipts identify the installed bytes. Offline mode never makes a network call.
-SHA-256 is computed at installation and refresh. Unchanged cache hits compare
-the receipt's size and file identity/change timestamps instead of rereading
-multi-gigabyte files; assignment separately validates raster structure and
-population values.
+Verified cache entries are grouped by source, release, and year. By default,
+their root is the current user's operating-system application cache, not the
+project or current working directory, so projects share verified entries. Use
+`cache_dir=` for one call or `POPULATION_EXPOSURE_CACHE_DIR` for inherited
+processes to select a shared root; the per-call value takes precedence.
+Adjacent JSON receipts identify the installed bytes. Offline mode never makes a
+network call and requires an exact verified cached or registered file in that
+root. SHA-256 is computed at installation and refresh. Unchanged cache hits
+compare the receipt's size and file identity/change timestamps instead of
+rereading multi-gigabyte files; assignment separately validates raster
+structure and population values.
 
 Chambers annual rasters are derived by reading one requested year's 21 age
 bands from the shared NetCDF-4 source in bounded windows. LandScan is never
 downloaded automatically: the caller acquires it from ORNL and `register()`
-copies and validates it without mutating the original.
+copies and validates it without mutating the original. Registering a licensed
+file once in a shared root makes that exact selection available to other
+projects using the same root, subject to the source license.
 
 ## Caller-owned analysis
 

@@ -20,7 +20,7 @@ from rasterio.transform import from_origin
 from shapely.geometry import box
 
 from population_exposure import assign_population, populations
-from population_exposure.populations import _api, _selection, _sources
+from population_exposure.populations import _api, _cache, _selection, _sources
 from population_exposure.populations._http import DownloadResult, sha256_file
 
 
@@ -801,6 +801,40 @@ def test_cache_directory_environment_override(
     result = populations.register("landscan-global:2024", original)
 
     assert tmp_path / "configured" in result.parents
+
+
+@pytest.mark.parametrize("cache_root_kind", ["platform-default", "environment"])
+def test_shared_cache_is_reused_across_working_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cache_root_kind: str,
+) -> None:
+    use_tiny_source(monkeypatch, "worldpop-global-1km")
+    fixture = write_population(tmp_path / "fixture-2020.tif")
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(_api, "download_file", fake_downloader_from(fixture, calls))
+    shared_root = tmp_path / "shared-cache"
+    first_project = tmp_path / "first-project"
+    second_project = tmp_path / "second-project"
+    first_project.mkdir()
+    second_project.mkdir()
+
+    if cache_root_kind == "platform-default":
+        monkeypatch.delenv("POPULATION_EXPOSURE_CACHE_DIR", raising=False)
+        monkeypatch.setattr(
+            _cache, "user_cache_path", lambda *args, **kwargs: shared_root
+        )
+    else:
+        monkeypatch.setenv("POPULATION_EXPOSURE_CACHE_DIR", str(shared_root))
+
+    monkeypatch.chdir(first_project)
+    first = populations.download("worldpop-global-1km:2020")
+    monkeypatch.chdir(second_project)
+    second = populations.download("worldpop-global-1km:2020")
+
+    assert first == second
+    assert first.is_relative_to(shared_root)
+    assert len(calls) == 1
 
 
 def test_refresh_and_register_option_types_are_checked(tmp_path: Path) -> None:
