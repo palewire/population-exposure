@@ -26,6 +26,19 @@ The registry does not download LandScan or bypass its license terms. GPW needs
 an Earthdata token. WorldPop, GHSL, and Chambers download from their publishers,
 but their file sizes may still be substantial.
 
+Download a selected raster once, then reuse the returned local path in later
+vector or raster assignments:
+
+```python
+import population_exposure as pe
+
+population = pe.populations.download("worldpop-global-1km:2020")
+```
+
+`pe.populations.download()` verifies and caches the selected raster. Calling it
+again with the same selection reuses the verified cached file unless
+`refresh=True`.
+
 ## Quick start with a registry source
 
 Use the observed 2024 Hurricane Helene wind swath published by the
@@ -37,18 +50,15 @@ import geopandas as gpd
 
 import population_exposure as pe
 
-population_path = pe.populations.download("worldpop-global-1km:2020")
 url = "zip+https://www.nhc.noaa.gov/gis/best_track/al092024_best_track.zip"
 winds = gpd.read_file(url, layer="AL092024_windswath")
 hurricane_force = winds[winds["RADII"] == 64].dissolve()
-exposed = pe.assign_population(hurricane_force, population_path)
+exposed = pe.assign_population(hurricane_force, population)
 print(exposed["population"].sum())
 ```
 
-`pe.populations.download()` verifies and caches the selected raster. Calling it
-again with the same selection reuses the verified cached file unless
-`refresh=True`. NWS information is public domain unless specifically noted
-otherwise; see the [NOAA/NWS use terms](https://www.weather.gov/disclaimer).
+NWS information is public domain unless specifically noted otherwise; see the
+[NOAA/NWS use terms](https://www.weather.gov/disclaimer).
 
 ## `assign_population()` options
 
