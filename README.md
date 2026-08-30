@@ -42,16 +42,18 @@ def assign_population(
 metadata and source references, not a long DataFrame or eagerly loaded global
 array.
 
-The `populations` namespace lists, describes, downloads, and registers catalog
+The documentation uses the conventional `pe` alias.
+
+The `pe.populations` namespace lists, describes, downloads, and registers catalog
 data:
 
 ```python
-from population_exposure import populations
+import population_exposure as pe
 
-populations.list()
-populations.info("worldpop-global-1km:2020")
-populations.download("worldpop-global-1km:2020")
-populations.register("landscan-global:2024", "/downloads/landscan-global-2024.tif")
+pe.populations.list()
+pe.populations.info("worldpop-global-1km:2020")
+pe.populations.download("worldpop-global-1km:2020")
+pe.populations.register("landscan-global:2024", "/downloads/landscan-global-2024.tif")
 ```
 
 ## Population catalog
@@ -72,9 +74,9 @@ Inspect the license, citation, DOI, size, grid, and acquisition method before
 downloading:
 
 ```python
-from population_exposure import populations
+import population_exposure as pe
 
-selected = populations.info("ghsl-r2023a-mollweide-1km:2020")
+selected = pe.populations.info("ghsl-r2023a-mollweide-1km:2020")
 print(selected.license)
 print(selected.citation)
 print(selected.download_size)
@@ -88,7 +90,9 @@ product, not density or the separately published UN-adjusted product. Pass a
 user-owned Earthdata token for GPW:
 
 ```python
-path = populations.download(
+import population_exposure as pe
+
+path = pe.populations.download(
     "gpwv4-r11-count:2020",
     earthdata_token=my_earthdata_token,
 )
@@ -110,9 +114,9 @@ LandScan is different. Register and accept the terms at the
 extract its GeoTIFF, then register a copy:
 
 ```python
-from population_exposure import populations
+import population_exposure as pe
 
-path = populations.register(
+path = pe.populations.register(
     "landscan-global:2024",
     "/downloads/landscan-global-2024.tif",
 )
@@ -142,7 +146,9 @@ the raster structure and values. A verified cache entry is reused unless
 `refresh=True`.
 
 ```python
-path = populations.download(
+import population_exposure as pe
+
+path = pe.populations.download(
     "worldpop-global-1km:2020",
     offline=True,
 )
@@ -162,7 +168,7 @@ files only; they are not a general data-version system.
 ```python
 import pandas as pd
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 hazard = pd.DataFrame(
     {
@@ -178,7 +184,7 @@ population = pd.DataFrame(
     }
 )
 
-exposed = assign_population(hazard, population, cell_columns="cell")
+exposed = pe.assign_population(hazard, population, cell_columns="cell")
 ```
 
 The output preserves every hazard row and column, its index and order, missing
@@ -209,7 +215,7 @@ county_severity = exposed.groupby(["county", "severity"], dropna=False)[
 import geopandas as gpd
 from shapely.geometry import box
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 hazard = gpd.GeoDataFrame(
     {"risk": ["high", "low"]},
@@ -217,7 +223,7 @@ hazard = gpd.GeoDataFrame(
     crs="EPSG:3857",
 )
 
-exposed = assign_population(hazard, "worldpop-global-1km:2020")
+exposed = pe.assign_population(hazard, "worldpop-global-1km:2020")
 ```
 
 The vector result preserves the original columns, geometry, CRS, index, and row
@@ -238,9 +244,9 @@ opened by the caller as a `GeoDataFrame` so the layer choice is explicit.
 ## Raster maps
 
 ```python
-from population_exposure import assign_population
+import population_exposure as pe
 
-exposed = assign_population("hazard.tif", "ghsl-r2023a-mollweide-1km:2020")
+exposed = pe.assign_population("hazard.tif", "ghsl-r2023a-mollweide-1km:2020")
 
 hazard_values, population_values = exposed.read()
 
@@ -290,7 +296,9 @@ and hash where available, and no inferred license or citation.
 To use any other local population-count raster:
 
 ```python
-exposed = assign_population("hazard.tif", "/data/custom-population-counts.tif")
+import population_exposure as pe
+
+exposed = pe.assign_population("hazard.tif", "/data/custom-population-counts.tif")
 ```
 
 ## Scope

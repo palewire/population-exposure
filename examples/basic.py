@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 hazard = pd.DataFrame(
     {
@@ -18,6 +18,6 @@ population = pd.DataFrame(
     }
 )
 
-exposed = assign_population(hazard, population, cell_columns="cell")
+exposed = pe.assign_population(hazard, population, cell_columns="cell")
 print(exposed)
 print(exposed.groupby("severity")["population"].sum())

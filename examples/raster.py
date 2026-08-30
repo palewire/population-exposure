@@ -7,7 +7,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 with TemporaryDirectory() as directory:
     directory_path = Path(directory)
@@ -40,7 +40,7 @@ with TemporaryDirectory() as directory:
     ) as population:
         population.write(np.array([[100, 200], [300, 400]], dtype=float), 1)
 
-    exposed = assign_population(hazard_path, population_path)
+    exposed = pe.assign_population(hazard_path, population_path)
     hazard_values, population_values = exposed.read()
     print(hazard_values)
     print(population_values)
