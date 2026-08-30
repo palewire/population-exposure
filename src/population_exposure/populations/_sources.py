@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal
 
@@ -53,9 +53,9 @@ class SourceSpec:
     publisher_checksum: str | None = None
     expected_bounds_by_year: MappingProxyType[
         int, tuple[float, float, float, float]
-    ] = MappingProxyType({})
-    expected_nodata_by_year: MappingProxyType[int, tuple[float, ...]] = (
-        MappingProxyType({})
+    ] = field(default_factory=lambda: MappingProxyType({}))
+    expected_nodata_by_year: MappingProxyType[int, tuple[float, ...]] = field(
+        default_factory=lambda: MappingProxyType({})
     )
 
     def source_info(self) -> SourceInfo:

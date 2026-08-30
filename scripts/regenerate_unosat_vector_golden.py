@@ -17,7 +17,7 @@ import shutil
 import tempfile
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 import geopandas as gpd
@@ -136,7 +136,17 @@ def extract_members(
         ]
         if not members:
             raise ValueError(f"Archive does not contain requested members: {archive}.")
-        source.extractall(destination, members=members)
+        for member in members:
+            member_path = PurePosixPath(member)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise ValueError(f"Archive member has an unsafe path: {member}.")
+            target = destination.joinpath(*member_path.parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with (
+                source.open(member) as input_stream,
+                target.open("wb") as output_stream,
+            ):
+                shutil.copyfileobj(input_stream, output_stream)
 
 
 def crop_population(
@@ -167,7 +177,7 @@ def crop_population(
             width=window.width,
             transform=window_transform(window, source.transform),
             compress="deflate",
-            predictor=2,
+            predictor=3,
             zlevel=9,
         )
         with rasterio.open(destination, "w", **profile) as output:

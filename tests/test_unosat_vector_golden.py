@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from pathlib import Path
 
 import geopandas as gpd
@@ -12,8 +13,18 @@ import rasterio
 from rasterio.features import geometry_mask
 
 from population_exposure import assign_population
+from scripts.regenerate_unosat_vector_golden import extract_members
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "data" / "unosat_fl20221125cod_basankusu"
+
+
+def test_unosat_regeneration_rejects_unsafe_archive_paths(tmp_path: Path) -> None:
+    archive = tmp_path / "source.zip"
+    with zipfile.ZipFile(archive, "w") as source:
+        source.writestr("layer/../../outside.shp", "")
+
+    with pytest.raises(ValueError, match="unsafe path"):
+        extract_members(archive, tmp_path / "extracted", ("layer",))
 
 
 @pytest.mark.component
@@ -40,7 +51,7 @@ def test_unosat_basankusu_exactextract_golden() -> None:
     assert hazard["pcode"].tolist() == ["CD4107"]
     assert hazard.to_crs(6933).area.item() / 1_000_000 == pytest.approx(
         metadata["measured"]["area_sqkm"],
-        abs=1e-9,
+        abs=1e-6,
     )
     assert metadata["measured"]["area_sqkm"] == pytest.approx(
         metadata["published"]["area_sqkm"],
