@@ -9,7 +9,7 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 hazard = gpd.GeoDataFrame(
     {"risk": ["high", "low"]},
@@ -33,5 +33,5 @@ with TemporaryDirectory() as directory:
     ) as population:
         population.write(np.array([[100, 200], [300, 400]], dtype=float), 1)
 
-    exposed = assign_population(hazard, population_path)
+    exposed = pe.assign_population(hazard, population_path)
     print(exposed)
