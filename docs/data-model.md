@@ -87,7 +87,9 @@ Verified cache entries are grouped by source, release, and year. By default,
 their root is the current user's operating-system application cache, not the
 project or current working directory, so projects share verified entries. Use
 `cache_dir=` for one call or `POPULATION_EXPOSURE_CACHE_DIR` for inherited
-processes to select a shared root; the per-call value takes precedence.
+processes to select a shared root; the per-call value takes precedence. Use an
+absolute environment value when projects run from different working
+directories, because a relative value follows each process's current directory.
 Adjacent JSON receipts identify the installed bytes. Offline mode never makes a
 network call and requires an exact verified cached or registered file in that
 root. SHA-256 is computed at installation and refresh. Unchanged cache hits

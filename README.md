@@ -139,8 +139,9 @@ concurrent processes from installing the same entry at once.
 Use `cache_dir=` to select a root for one call, or set
 `POPULATION_EXPOSURE_CACHE_DIR` to select a root for every call in processes
 that inherit the setting. An explicit `cache_dir=` takes precedence over the
-environment setting. Use the same root across projects to share verified
-downloads or registered files.
+environment setting. Use the same absolute root across projects to share
+verified downloads or registered files; a relative environment value is
+resolved from each process's current working directory.
 
 Downloads stream to a same-directory partial file, enforce size limits, resume
 only after the server advertises and correctly accepts byte ranges, verify
