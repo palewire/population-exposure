@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from population_exposure import assign_population
+from population_exposure.populations._http import DownloadResult
+from validation.china_heatwave_2019 import reproduce as reproduction
 from validation.china_heatwave_2019.method import (
     count_heatwave_days,
     heatwave_anomaly,
@@ -147,6 +150,80 @@ def test_empty_or_zero_population_selection_fails_clearly(
             np.array([[3]], dtype=np.int16),
             np.array([[2.0]]),
         )
+
+
+def test_invalid_cached_download_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replace a bad owned cache file with verified source bytes.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+        monkeypatch: Pytest attribute replacement helper.
+
+    Returns:
+        None.
+
+    Examples:
+        Pytest runs this check without making a network request.
+    """
+    destination = tmp_path / "source.bin"
+    destination.write_bytes(b"bad")
+    expected = b"verified"
+    expected_sha256 = hashlib.sha256(expected).hexdigest()
+
+    def fake_download(url, partial_path, **kwargs):
+        assert not destination.exists()
+        partial_path.write_bytes(expected)
+        return DownloadResult(size=len(expected), sha256=expected_sha256)
+
+    monkeypatch.setattr(reproduction, "download_file", fake_download)
+
+    result = reproduction._download(
+        "https://example.test/source.bin",
+        destination,
+        expected_size=len(expected),
+        expected_sha256=expected_sha256,
+    )
+
+    assert result == destination
+    assert result.read_bytes() == expected
+
+
+def test_invalid_cached_country_raster_is_reextracted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replace a bad extracted raster from the verified source archive.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+        monkeypatch: Pytest attribute replacement helper.
+
+    Returns:
+        None.
+
+    Examples:
+        Pytest runs this check with a tiny local ZIP archive.
+    """
+    expected = b"replacement raster"
+    archive = tmp_path / "countries.zip"
+    with ZipFile(archive, "w") as output:
+        output.writestr(reproduction.COUNTRY_RASTER_FILENAME, expected)
+    destination = tmp_path / reproduction.COUNTRY_RASTER_FILENAME
+    destination.write_bytes(b"bad")
+    monkeypatch.setattr(reproduction, "COUNTRY_RASTER_SIZE", len(expected))
+    monkeypatch.setattr(
+        reproduction,
+        "COUNTRY_RASTER_SHA256",
+        hashlib.sha256(expected).hexdigest(),
+    )
+
+    result = reproduction._extract_country_raster(archive, destination)
+
+    assert result == destination
+    assert result.read_bytes() == expected
 
 
 @pytest.mark.integration

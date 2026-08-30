@@ -129,13 +129,17 @@ def _download(
         This function is used with the immutable URLs declared in this module.
     """
     if destination.is_file():
-        _verify_file(
-            destination,
-            expected_size=expected_size,
-            expected_sha256=expected_sha256,
-            expected_md5=expected_md5,
-        )
-        return destination
+        try:
+            _verify_file(
+                destination,
+                expected_size=expected_size,
+                expected_sha256=expected_sha256,
+                expected_md5=expected_md5,
+            )
+        except ValueError:
+            destination.unlink()
+        else:
+            return destination
 
     if authentication_required and (bearer_token is None or not bearer_token.strip()):
         raise ValueError(
@@ -317,26 +321,42 @@ def _extract_country_raster(archive_path: Path, destination: Path) -> Path:
     Examples:
         The extraction ignores the accompanying shapefile and lookup tables.
     """
-    if not destination.is_file():
-        with ZipFile(archive_path) as archive:
-            matches = [
-                member
-                for member in archive.infolist()
-                if Path(member.filename).name == COUNTRY_RASTER_FILENAME
-            ]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"GPW archive must contain exactly one {COUNTRY_RASTER_FILENAME}."
-                )
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(matches[0]) as source, destination.open("wb") as output:
-                shutil.copyfileobj(source, output)
-    _verify_file(
-        destination,
-        expected_size=COUNTRY_RASTER_SIZE,
-        expected_sha256=COUNTRY_RASTER_SHA256,
-        expected_md5=None,
-    )
+    if destination.is_file():
+        try:
+            _verify_file(
+                destination,
+                expected_size=COUNTRY_RASTER_SIZE,
+                expected_sha256=COUNTRY_RASTER_SHA256,
+                expected_md5=None,
+            )
+        except ValueError:
+            destination.unlink()
+        else:
+            return destination
+
+    with ZipFile(archive_path) as archive:
+        matches = [
+            member
+            for member in archive.infolist()
+            if Path(member.filename).name == COUNTRY_RASTER_FILENAME
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"GPW archive must contain exactly one {COUNTRY_RASTER_FILENAME}."
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(matches[0]) as source, destination.open("wb") as output:
+            shutil.copyfileobj(source, output)
+    try:
+        _verify_file(
+            destination,
+            expected_size=COUNTRY_RASTER_SIZE,
+            expected_sha256=COUNTRY_RASTER_SHA256,
+            expected_md5=None,
+        )
+    except ValueError:
+        destination.unlink()
+        raise
     return destination
 
 
