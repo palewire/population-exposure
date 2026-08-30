@@ -38,6 +38,21 @@ def test_unosat_regeneration_rejects_unsafe_archive_paths(
         extract_members(archive, tmp_path / "extracted", ("layer",))
 
 
+def test_unosat_regeneration_extracts_only_complete_member_prefixes(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "source.zip"
+    with zipfile.ZipFile(archive, "w") as source:
+        source.writestr("layer.shp", "")
+        source.writestr("layer_backup.shp", "")
+
+    destination = tmp_path / "extracted"
+    extract_members(archive, destination, ("layer",))
+
+    assert (destination / "layer.shp").is_file()
+    assert not (destination / "layer_backup.shp").exists()
+
+
 @pytest.mark.component
 def test_unosat_basankusu_exactextract_golden() -> None:
     metadata = json.loads((FIXTURE_DIRECTORY / "metadata.json").read_text())

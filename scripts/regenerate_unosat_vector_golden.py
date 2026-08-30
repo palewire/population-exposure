@@ -4,6 +4,7 @@ This maintenance-only script downloads about 910 MB. It is intentionally not
 part of the package API or normal test suite.
 
 Example:
+    # The final argument is OUTPUT_DIRECTORY and must not already exist.
     uv run python scripts/regenerate_unosat_vector_golden.py \
         --accept-download /tmp/unosat_fl20221125cod_basankusu
 """

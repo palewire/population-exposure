@@ -29,7 +29,11 @@ def extract_members(
         members = [
             name
             for name in source.namelist()
-            if any(name.startswith(prefix) for prefix in prefixes)
+            if any(
+                name == prefix
+                or name.startswith((f"{prefix}.", f"{prefix}/", f"{prefix}\\"))
+                for prefix in prefixes
+            )
         ]
         if not members:
             raise ValueError(f"Archive does not contain requested members: {archive}.")

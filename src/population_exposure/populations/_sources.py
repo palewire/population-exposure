@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from population_exposure.populations._models import (
     Acquisition,
@@ -12,6 +12,9 @@ from population_exposure.populations._models import (
     SelectionInfo,
     SourceInfo,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 Delivery = Literal["geotiff", "zip", "chambers", "manual"]
 
@@ -51,10 +54,10 @@ class SourceSpec:
     max_download_bytes: int
     exact_download_bytes: int | None = None
     publisher_checksum: str | None = None
-    expected_bounds_by_year: MappingProxyType[
-        int, tuple[float, float, float, float] | None
-    ] = field(default_factory=lambda: MappingProxyType({}))
-    expected_nodata_by_year: MappingProxyType[int, tuple[float, ...] | None] = field(
+    expected_bounds_by_year: Mapping[int, tuple[float, float, float, float] | None] = (
+        field(default_factory=lambda: MappingProxyType({}))
+    )
+    expected_nodata_by_year: Mapping[int, tuple[float, ...] | None] = field(
         default_factory=lambda: MappingProxyType({})
     )
 
