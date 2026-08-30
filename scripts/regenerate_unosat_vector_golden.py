@@ -138,7 +138,12 @@ def extract_members(
             raise ValueError(f"Archive does not contain requested members: {archive}.")
         for member in members:
             member_path = PurePosixPath(member)
-            if member_path.is_absolute() or ".." in member_path.parts:
+            if (
+                "\\" in member
+                or member_path.is_absolute()
+                or ".." in member_path.parts
+                or any(":" in part for part in member_path.parts)
+            ):
                 raise ValueError(f"Archive member has an unsafe path: {member}.")
             target = destination.joinpath(*member_path.parts)
             target.parent.mkdir(parents=True, exist_ok=True)

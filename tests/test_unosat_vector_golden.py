@@ -18,10 +18,21 @@ from scripts.regenerate_unosat_vector_golden import extract_members
 FIXTURE_DIRECTORY = Path(__file__).parent / "data" / "unosat_fl20221125cod_basankusu"
 
 
-def test_unosat_regeneration_rejects_unsafe_archive_paths(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "member",
+    [
+        "layer/../../outside.shp",
+        r"layer\..\..\outside.shp",
+        "layer/C:/outside.shp",
+    ],
+)
+def test_unosat_regeneration_rejects_unsafe_archive_paths(
+    tmp_path: Path,
+    member: str,
+) -> None:
     archive = tmp_path / "source.zip"
     with zipfile.ZipFile(archive, "w") as source:
-        source.writestr("layer/../../outside.shp", "")
+        source.writestr(member, "")
 
     with pytest.raises(ValueError, match="unsafe path"):
         extract_members(archive, tmp_path / "extracted", ("layer",))
