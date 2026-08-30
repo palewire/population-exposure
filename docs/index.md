@@ -1,10 +1,6 @@
 # population-exposure
 
-`population-exposure` assigns population counts to tabular hazard rows, polygon
-features, or raster cells. It joins exact table keys, calculates the population
-inside polygons, or aligns a population raster with a hazard raster. It does
-not group or sum results by hazard category: callers make those choices later
-with pandas, NumPy, or their usual analysis tools.
+Estimate the number of people in any vector polygon or raster cell.
 
 ## Installation
 
@@ -12,32 +8,7 @@ with pandas, NumPy, or their usual analysis tools.
 pip install population-exposure
 ```
 
-Python 3.11 or newer is required. GeoPandas, Pyogrio, Rasterio, Shapely, and
-Exactextract install with the package.
-
-## Quick starts
-
-The documentation uses the conventional `pe` alias.
-
-### Table
-
-Give both tables the same cell key. Keys match exactly as written.
-
-```python
-import pandas as pd
-
-import population_exposure as pe
-
-hazard = pd.DataFrame({"cell": ["A", "B"], "risk": ["high", "low"]})
-population = pd.DataFrame({"cell": ["A", "B"], "population": [100.0, 200.0]})
-
-exposed = pe.assign_population(hazard, population, cell_columns="cell")
-```
-
-`exposed` keeps the hazard columns, index, and row order, with a new
-`population` column. Every hazard row must have one matching population cell.
-
-### Polygon map
+### Using vector polygons
 
 Pass a GeoPandas frame of non-overlapping polygons and a population-count
 GeoTIFF, an open Rasterio reader, or a catalog selection.
@@ -196,6 +167,5 @@ The public API is intentionally small.
 
 ## About
 
-Ben Welsh released `population-exposure` in 2026 for assigning population
-counts to hazard data. GitHub Copilot, an AI-powered text generator, helped
+Ben Welsh and Casey Miller released `population-exposure` in 2026 after developing it for the [Reuters Climate Monitor](https://www.reuters.com/graphics/CLIMATE-AUTOMATED/MONITOR/akpeykqqapr/). GitHub Copilot, an AI-powered text generator, helped
 draft this documentation.
