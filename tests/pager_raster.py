@@ -36,6 +36,7 @@ PAGER_EXPOSURES_SHA256 = (
 PAGER_XML_SHA256 = "58e92b0d31383dd38203d457e6773667864ee95be969a92bd96f4cb5b4796639"
 _PAGER_NAMESPACE = "http://earthquake.usgs.gov/eqcenter/shakemap"
 _ARC_MINUTE = 1.0 / 60.0
+# Four-decimal XML coordinates can be half a unit in the last place from center.
 _COORDINATE_ROUNDING_TOLERANCE = 0.000051
 MMI_BAND_BOUNDARIES = tuple(0.5 + index for index in range(11))
 PUBLISHED_EXPOSURE = (0, 10642442, 17902502, 21545813, 601968, 1721, 44915, 200, 0, 0)
@@ -294,7 +295,11 @@ def _validate_coordinates(
             does not match the expected PAGER grid.
 
     Examples:
-        >>> _validate_coordinates(np.array([0.0, 1 / 60]), np.array([1 / 60, 0.0]), {})
+        >>> _validate_coordinates(
+        ...     np.array([0.0, 1 / 60]),
+        ...     np.array([1 / 60, 0.0]),
+        ...     {"nominal_lon_spacing": "0.0167", "nominal_lat_spacing": "0.0167"},
+        ... )
     """
     for name in ("nominal_lon_spacing", "nominal_lat_spacing"):
         nominal = float(attributes.get(name, "nan"))
