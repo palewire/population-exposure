@@ -44,7 +44,7 @@ def test_unosat_basankusu_exactextract_golden() -> None:
 
     hazard = gpd.read_file(hazard_path, engine="pyogrio")
     assert len(hazard) == 1
-    assert hazard.crs == "EPSG:4326"
+    assert hazard.crs.to_string() == "EPSG:4326"
     assert hazard.geometry.is_valid.all()
     assert not hazard.geometry.is_empty.any()
     assert hazard["district"].tolist() == ["Basankusu"]
