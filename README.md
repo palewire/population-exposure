@@ -340,3 +340,34 @@ product. Chambers is manual only because its one shared source is
 4,122,344,510 bytes. LandScan is excluded: its official portal requires
 registration and license acceptance, and the package continues to test local
 registration with fixtures rather than automating or redistributing it.
+
+### Publishing releases
+
+Before the first release, configure pending trusted publishers at
+[TestPyPI](https://test.pypi.org/manage/account/publishing/) and
+[PyPI](https://pypi.org/manage/account/publishing/):
+
+| Setting | Value |
+|---|---|
+| Owner | `palewire` |
+| Repository | `population-exposure` |
+| Workflow | `publish.yml` |
+| Package | `population-exposure` |
+| TestPyPI environment | `testpypi` |
+| PyPI environment | `pypi` |
+
+Create matching GitHub environments named `testpypi` and `pypi`. Protect the
+`pypi` environment with the required release approval policy.
+
+To validate a version manually, choose **Run workflow** for **Publish package**,
+select the release tag, and keep the only available target, `testpypi`. Install
+the result with:
+
+```sh
+python -m pip install --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ population-exposure
+```
+
+For PyPI, create a GitHub Release from the exact version tag and publish that
+release. Publishing starts only for the `published` release event and uses the
+validated artifacts from that workflow run. No PyPI API token is used.
