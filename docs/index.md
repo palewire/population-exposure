@@ -11,7 +11,7 @@ pip install population-exposure
 ## Population registry
 
 The built-in registry provides verified population-count sources. Select one
-with its exact `source:year` identifier; `pe.populations.info()` reports its
+with its exact `source-id:YYYY` identifier; `pe.populations.info()` reports its
 license, citation, and download details before anything is downloaded.
 
 | Source ID | Publisher | Available years and grid | Access and size | Best suited for |
