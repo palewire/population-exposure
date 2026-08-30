@@ -51,6 +51,7 @@ dev = [
     "zizmor",
 ]
 test = [
+    "defusedxml>=0.7.1",
     "pytest",
     "pytest-cov",
     "hypothesis",

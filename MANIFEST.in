@@ -23,3 +23,4 @@ recursive-include docs *.md
 recursive-include examples *.py
 recursive-include scripts *.py
 recursive-include tests *.py
+recursive-include tests/fixtures/pager_ridgecrest *
