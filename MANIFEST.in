@@ -24,3 +24,4 @@ recursive-include examples *.py
 recursive-include scripts *.py
 recursive-include tests *.py
 recursive-include tests/data/unosat_fl20221125cod_basankusu *.geojson *.json *.md *.tif
+recursive-include tests/fixtures/pager_ridgecrest *

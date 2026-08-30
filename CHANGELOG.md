@@ -29,6 +29,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   CIESIN's official one-degree count grid for the same catalog year.
 - Base GPW parity tolerances on each official coarse float32 count's
   representable precision, while retaining low-value and aggregate checks.
+- Add an opt-in USGS PAGER Ridgecrest raster golden reproduction using the
+  exact public hazard grid and a caller-supplied licensed LandScan 2017 file.
 
 ### Fixed
 
