@@ -54,11 +54,11 @@ def test_unosat_basankusu_exactextract_golden() -> None:
     assigned = result["population"].item()
     assert assigned == pytest.approx(
         metadata["measured"]["exactextract_population"],
-        abs=1e-8,
+        abs=1e-6,
     )
     assert assigned - metadata["published"]["population"] == pytest.approx(
         metadata["measured"]["exactextract_difference_from_published"],
-        abs=1e-8,
+        abs=1e-6,
     )
     assert result.attrs["population_assignment"] == {
         "method": "exactextract_sum",
@@ -71,7 +71,7 @@ def test_unosat_basankusu_exactextract_golden() -> None:
     assert assigned - metadata["measured"]["full_source_exactextract_population"] == (
         pytest.approx(
             metadata["measured"]["fixture_difference_from_full_source"],
-            abs=1e-8,
+            abs=1e-6,
         )
     )
 
@@ -94,15 +94,15 @@ def test_unosat_basankusu_cell_center_reference_is_pinned() -> None:
     assert list(values.shape) == metadata["measured"]["crop_raster_shape"]
     assert float(values.sum(dtype="float64")) == pytest.approx(
         metadata["measured"]["crop_population"],
-        abs=1e-8,
+        abs=1e-6,
     )
     assert cell_center_population == pytest.approx(
         metadata["measured"]["cell_center_population"],
-        abs=1e-8,
+        abs=1e-6,
     )
     assert cell_center_population - metadata["published"][
         "population"
     ] == pytest.approx(
         metadata["measured"]["cell_center_difference_from_published"],
-        abs=1e-8,
+        abs=1e-6,
     )

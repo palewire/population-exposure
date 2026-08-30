@@ -29,7 +29,7 @@ def validate_catalog_raster(
     try:
         with rasterio.open(path) as dataset:
             total = validate_population_raster(dataset)
-            _validate_source_structure(dataset, source)
+            _validate_source_structure(dataset, source, year)
             if require_year_marker:
                 _validate_registered_year(dataset, path, year)
             if source.plausible_total is not None:
@@ -72,7 +72,11 @@ def observed_raster_facts(
     }
 
 
-def _validate_source_structure(dataset: DatasetReader, source: SourceSpec) -> None:
+def _validate_source_structure(
+    dataset: DatasetReader,
+    source: SourceSpec,
+    year: int,
+) -> None:
     """Require the source's stable published grid properties."""
     expected_crs = rasterio.CRS.from_user_input(source.crs)
     if dataset.crs != expected_crs:
@@ -112,7 +116,8 @@ def _validate_source_structure(dataset: DatasetReader, source: SourceSpec) -> No
             atol=1e-12,
         ):
             raise ValueError(f"{source.source_id!r} requires a north-up grid.")
-    if source.expected_bounds is not None:
+    expected_bounds = source.expected_bounds_for(year)
+    if expected_bounds is not None:
         observed_bounds = tuple(float(value) for value in dataset.bounds)
         tolerance = (
             max(source.expected_resolution) * 1e-6
@@ -121,20 +126,21 @@ def _validate_source_structure(dataset: DatasetReader, source: SourceSpec) -> No
         )
         if not np.allclose(
             observed_bounds,
-            source.expected_bounds,
+            expected_bounds,
             rtol=0,
             atol=tolerance,
         ):
             raise ValueError(
-                f"{source.source_id!r} requires bounds {source.expected_bounds}; "
+                f"{source.source_id!r} requires bounds {expected_bounds}; "
                 f"found {observed_bounds}."
             )
-    if source.expected_nodata is not None and not _nodata_matches(
+    expected_nodata = source.expected_nodata_for(year)
+    if expected_nodata is not None and not _nodata_matches(
         dataset.nodata,
-        source.expected_nodata,
+        expected_nodata,
     ):
         raise ValueError(
-            f"{source.source_id!r} requires nodata {source.expected_nodata}; "
+            f"{source.source_id!r} requires nodata {expected_nodata}; "
             f"found {dataset.nodata!r}."
         )
 

@@ -51,6 +51,12 @@ class SourceSpec:
     max_download_bytes: int
     exact_download_bytes: int | None = None
     publisher_checksum: str | None = None
+    expected_bounds_by_year: MappingProxyType[
+        int, tuple[float, float, float, float]
+    ] = MappingProxyType({})
+    expected_nodata_by_year: MappingProxyType[int, tuple[float, ...]] = (
+        MappingProxyType({})
+    )
 
     def source_info(self) -> SourceInfo:
         """Return the public source record."""
@@ -106,6 +112,21 @@ class SourceSpec:
             return None
         return self.archive_member_template.format(year=year)
 
+    def expected_bounds_for(
+        self,
+        year: int,
+    ) -> tuple[float, float, float, float] | None:
+        """Return documented raster bounds for a selected year."""
+        if self.expected_bounds is not None:
+            return self.expected_bounds
+        return self.expected_bounds_by_year.get(year)
+
+    def expected_nodata_for(self, year: int) -> tuple[float, ...] | None:
+        """Return documented raster nodata values for a selected year."""
+        if self.expected_nodata is not None:
+            return self.expected_nodata
+        return self.expected_nodata_by_year.get(year)
+
 
 _CC_BY_4 = "Creative Commons Attribution 4.0 International (CC BY 4.0)"
 _GLOBAL_TOTAL = (100_000_000.0, 20_000_000_000.0)
@@ -147,15 +168,39 @@ WORLDPOP = SourceSpec(
     expected_width=43_200,
     expected_height=18_720,
     expected_resolution=(0.0083333333, 0.0083333333),
-    expected_bounds=(
-        -180.001249265,
-        -72.00041617728999,
-        179.99874929500004,
-        83.99958319871001,
-    ),
-    expected_nodata=(-3.4028234663852886e38,),
+    expected_bounds=None,
+    expected_nodata=None,
     plausible_total=_GLOBAL_TOTAL,
     max_download_bytes=1_500_000_000,
+    expected_bounds_by_year=MappingProxyType(
+        {
+            2000: (
+                -180.001249265,
+                -71.99208284398998,
+                179.99874929500004,
+                84.00791653201003,
+            ),
+            2010: (
+                -180.001249265,
+                -71.99208284398998,
+                179.99874929500004,
+                84.00791653201003,
+            ),
+            2020: (
+                -180.001249265,
+                -72.00041617728999,
+                179.99874929500004,
+                83.99958319871001,
+            ),
+        }
+    ),
+    expected_nodata_by_year=MappingProxyType(
+        {
+            2000: (3.4028234663852886e38,),
+            2010: (-3.4028234663852886e38,),
+            2020: (-3.4028234663852886e38,),
+        }
+    ),
 )
 
 GHSL = SourceSpec(

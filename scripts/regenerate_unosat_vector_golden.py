@@ -49,6 +49,7 @@ UNOSAT_WORKBOOK_SHA256 = "e6a68d2b0f1ad8d78c00d126cc04e9fca2ca96c5493727d54219f7
 UNOSAT_VECTOR_SHA256 = "1003786f22094ca038b2ab39576614e4ac5d38606f18880257be83d84d819f33"  # pragma: allowlist secret
 OCHA_BOUNDARIES_SHA256 = "a819758bebacb042a167701c84e0a227c96ad9ee769b39dfa9d3ec70977161fd"  # pragma: allowlist secret
 WORLDPOP_SHA256 = "d98f9efd911ed4afed696dff9024b20a4e3ec5bf6c0e21f241a26725b7df0866"  # pragma: allowlist secret
+DOWNLOAD_TIMEOUT_SECONDS = 120
 VECTOR_MEMBER = (
     "FL20221125COD_SHP/"
     "VIIRS_20221101_20221128_MaximumFloodWaterExtent_Equateur_NordUbangi_"  # pragma: allowlist secret
@@ -96,7 +97,10 @@ def download(url: str, destination: Path, expected_sha256: str) -> None:
     if urlsplit(url).scheme != "https":
         raise ValueError(f"Source URL must use HTTPS: {url}.")
     with (
-        urllib.request.urlopen(url) as response,  # noqa: S310 -- HTTPS required above.
+        urllib.request.urlopen(  # noqa: S310 -- HTTPS required above.
+            url,
+            timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        ) as response,
         destination.open("wb") as output,
     ):
         shutil.copyfileobj(response, output)

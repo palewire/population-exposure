@@ -32,7 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Correct the catalogued dimensions and bounds for the official WorldPop 2020
-  global 1 km mosaic.
+- Correct the catalogued grid bounds and nodata values for the official
+  WorldPop 1 km mosaics by selected year.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main
