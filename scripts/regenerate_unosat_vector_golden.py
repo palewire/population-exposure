@@ -5,7 +5,7 @@ part of the package API or normal test suite.
 
 Example:
     uv run python scripts/regenerate_unosat_vector_golden.py \
-        --accept-download tests/data/unosat_fl20221125cod_basankusu
+        --accept-download /tmp/unosat_fl20221125cod_basankusu
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ import json
 import shutil
 import tempfile
 import urllib.request
-import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import geopandas as gpd
@@ -27,6 +26,7 @@ from rasterio.features import geometry_mask, geometry_window
 from rasterio.windows import transform as window_transform
 
 from population_exposure import assign_population, populations
+from population_exposure.populations._archives import extract_members
 
 UNOSAT_WORKBOOK_URL = (
     "https://unosat.org/static/unosat_filesystem/3456/"
@@ -112,48 +112,6 @@ def download(url: str, destination: Path, expected_sha256: str) -> None:
         )
 
 
-def extract_members(
-    archive: Path, destination: Path, prefixes: tuple[str, ...]
-) -> None:
-    """Extract only named shapefile groups from an archive.
-
-    Args:
-        archive: ZIP archive containing shapefile sidecar files.
-        destination: Directory receiving selected archive members.
-        prefixes: Member path prefixes to retain, without file extensions.
-
-    Returns:
-        None. Raises ValueError when no requested members are available.
-
-    Examples:
-        >>> extract_members(Path("source.zip"), Path("extract"), ("layer",))
-    """
-    with zipfile.ZipFile(archive) as source:
-        members = [
-            name
-            for name in source.namelist()
-            if any(name.startswith(prefix) for prefix in prefixes)
-        ]
-        if not members:
-            raise ValueError(f"Archive does not contain requested members: {archive}.")
-        for member in members:
-            member_path = PurePosixPath(member)
-            if (
-                "\\" in member
-                or member_path.is_absolute()
-                or ".." in member_path.parts
-                or any(":" in part for part in member_path.parts)
-            ):
-                raise ValueError(f"Archive member has an unsafe path: {member}.")
-            target = destination.joinpath(*member_path.parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with (
-                source.open(member) as input_stream,
-                target.open("wb") as output_stream,
-            ):
-                shutil.copyfileobj(input_stream, output_stream)
-
-
 def crop_population(
     population_path: Path,
     hazard: gpd.GeoDataFrame,
@@ -203,7 +161,8 @@ def build_fixture(output_directory: Path, sources_directory: Path) -> None:
     """Build the Basankusu water-extent fixture from checked official sources.
 
     Args:
-        output_directory: Empty directory that will receive offline test data.
+        output_directory: Directory path that must not already exist and will
+            receive offline test data.
         sources_directory: Directory holding the verified source downloads.
 
     Returns:

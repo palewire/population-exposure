@@ -13,7 +13,7 @@ import rasterio
 from rasterio.features import geometry_mask
 
 from population_exposure import assign_population
-from scripts.regenerate_unosat_vector_golden import extract_members
+from population_exposure.populations._archives import extract_members
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "data" / "unosat_fl20221125cod_basankusu"
 
