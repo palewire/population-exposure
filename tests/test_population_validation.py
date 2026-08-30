@@ -226,6 +226,7 @@ def test_worldpop_uses_documented_year_specific_grid_values(
     expected_bounds: tuple[float, float, float, float],
     expected_nodata: tuple[float, ...],
 ) -> None:
+    assert _sources.WORLDPOP.expected_resolution == (1 / 120, 1 / 120)
     assert _sources.WORLDPOP.expected_bounds_for(year) == expected_bounds
     assert _sources.WORLDPOP.expected_nodata_for(year) == expected_nodata
 

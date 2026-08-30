@@ -86,6 +86,8 @@ def use_tiny_source(
         expected_resolution=(1.0, 1.0),
         expected_bounds=(0.0, 0.0, 2.0, 2.0),
         expected_nodata=(-9999.0,),
+        expected_bounds_by_year=MappingProxyType({}),
+        expected_nodata_by_year=MappingProxyType({}),
         plausible_total=(0.0, 1_000.0),
         max_download_bytes=1_000_000,
         exact_download_bytes=None,

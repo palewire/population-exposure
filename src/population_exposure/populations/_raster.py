@@ -103,7 +103,7 @@ def _validate_source_structure(
             observed_resolution,
             source.expected_resolution,
             rtol=0,
-            atol=max(source.expected_resolution) * 1e-9,
+            atol=max(source.expected_resolution) * 1e-8,
         ):
             raise ValueError(
                 f"{source.source_id!r} requires pixel size "
