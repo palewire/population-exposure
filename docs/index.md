@@ -29,8 +29,8 @@ but their file sizes may still be substantial.
 ## Quick start with a registry source
 
 WorldPop is a practical first source when an approximately 1 GB annual download
-is acceptable. List the available sources, inspect an exact selection, download
-it once, then use the returned local raster path with your polygons.
+is acceptable. Download the selected raster, then use its returned local path
+with your polygons.
 
 ```python
 import geopandas as gpd
@@ -38,14 +38,7 @@ from shapely.geometry import box
 
 import population_exposure as pe
 
-for source in pe.populations.list():
-    print(source.source_id, source.supported_years)
-
-selection = "worldpop-global-1km:2020"
-details = pe.populations.info(selection)
-print(details.license)
-
-population_path = pe.populations.download(selection)
+population_path = pe.populations.download("worldpop-global-1km:2020")
 hazard = gpd.GeoDataFrame(
     {"risk": ["high"]},
     geometry=[box(0, 0, 1, 1)],
