@@ -105,6 +105,20 @@ def use_tiny_source(
     return tiny
 
 
+def test_landscan_2024_grid_covers_the_full_global_extent() -> None:
+    """Keep LandScan 2024 registration checks aligned with its published grid."""
+    source = _sources.LANDSCAN
+
+    assert source.expected_width == 43_200
+    assert source.expected_height == 21_600
+    assert source.expected_bounds == (
+        -180.0,
+        -89.99999999280098,
+        179.99999998559997,
+        89.999999999999,
+    )
+
+
 def fake_downloader_from(
     source_path: Path,
     calls: list[dict[str, object]],

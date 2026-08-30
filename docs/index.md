@@ -35,9 +35,11 @@ import population_exposure as pe
 population = pe.populations.download("worldpop-global-1km:2020")
 ```
 
-`pe.populations.download()` verifies and caches the selected raster. Calling it
-again with the same selection reuses the verified cached file unless
-`refresh=True`.
+`pe.populations.download()` verifies and caches the selected raster. By default,
+it uses the current user's operating-system cache, so verified rasters are
+shared across that user's projects. Calling it again with the same selection
+reuses the verified cached file unless `refresh=True`; use `cache_dir=` or
+`POPULATION_EXPOSURE_CACHE_DIR` to select another cache root.
 
 LandScan requires a separate, manually acquired annual GeoTIFF. After accepting
 the ORNL terms and downloading the 2024 file, register it once to obtain the
@@ -106,14 +108,14 @@ with rasterio.open(hazard_directory / "mmi_mean.flt") as source:
 
 assignment = pe.assign_population("ridgecrest-mmi.tif", landscan_population)
 mmi, people = assignment.read()
-strong_shaking_population = people[mmi >= 6].sum()
-print(strong_shaking_population)
+pager_vi_or_greater_population = people[mmi >= 5.5].sum()
+print(pager_vi_or_greater_population)
 ```
 
 This is raster-to-raster assignment: population counts are regridded onto the
-MMI cells. The final sum is the people in cells with MMI 6 or greater, a
-strong-or-worse shaking category. It is different from the vector coverage
-allocation above and the exact table-coordinate join below.
+MMI cells. The final sum uses the PAGER-style MMI VI-or-greater threshold,
+which begins at 5.5. It is different from the vector coverage allocation above
+and the exact table-coordinate join below.
 
 ## `assign_population()` options
 
