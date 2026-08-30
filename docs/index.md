@@ -134,23 +134,42 @@ The result keeps the original geometry and coordinate system. Population cells
 crossing a polygon boundary are counted by their covered share, so totals can
 be fractional.
 
-## Tabular data
+## Tabular heat exposure
 
-For advanced use with tables, give the hazard and population tables the same
-complete, unique cell key:
+ERA5-derived temperatures and the Chambers 0.25-degree grid use matching
+longitude and latitude cell centers. With both tables keyed by those centers,
+`pe.assign_population()` performs an exact cell-coordinate join, not a spatial
+overlay. The values below are a small, high-temperature subset.
 
 ```python
 import pandas as pd
 
 import population_exposure as pe
 
-hazard = pd.DataFrame({"cell": ["A", "B"], "risk": ["high", "low"]})
-population = pd.DataFrame({"cell": ["A", "B"], "population": [100.0, 200.0]})
+chambers = pe.populations.info("chambers-hybrid:2020")
+print(chambers.resolution)  # 0.25 degrees
 
-exposed = pe.assign_population(hazard, population, cell_columns="cell")
+temperature = pd.DataFrame(
+    {
+        "longitude": [-76.0, -75.75],
+        "latitude": [38.75, 38.5],
+        "daily_max_c": [38.4, 39.1],
+    }
+)
+population = pd.DataFrame(
+    {
+        "longitude": [-76.0, -75.75],
+        "latitude": [38.75, 38.5],
+        "population": [20500.0, 17800.0],
+    }
+)
+
+exposed = pe.assign_population(temperature, population)
+hot_population = exposed.loc[exposed["daily_max_c"] >= 38, "population"].sum()
+print(hot_population)
 ```
 
-`exposed` keeps the hazard columns, index, and row order, with a new
+`exposed` keeps the temperature columns, index, and row order, with a new
 `population` column.
 
 ## API reference
