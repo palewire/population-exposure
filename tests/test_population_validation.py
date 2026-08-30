@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -61,6 +62,8 @@ def tiny_source(**changes):
         "expected_resolution": (1.0, 1.0),
         "expected_bounds": (0.0, 0.0, 2.0, 2.0),
         "expected_nodata": (-9999.0,),
+        "expected_bounds_by_year": MappingProxyType({}),
+        "expected_nodata_by_year": MappingProxyType({}),
         "plausible_total": (0.0, 100.0),
     }
     defaults.update(changes)
@@ -181,6 +184,112 @@ def test_nodata_matching_handles_none_nan_and_numeric_values() -> None:
     assert _raster._nodata_matches(float("nan"), (float("nan"),))
     assert _raster._nodata_matches(-9999.0, (-9999.0,))
     assert not _raster._nodata_matches(-1.0, (-9999.0,))
+
+
+@pytest.mark.parametrize(
+    ("year", "expected_bounds", "expected_nodata"),
+    [
+        (
+            2000,
+            (
+                -180.001249265,
+                -71.99208284398998,
+                179.99874929500004,
+                84.00791653201003,
+            ),
+            (3.4028234663852886e38,),
+        ),
+        (
+            2010,
+            (
+                -180.001249265,
+                -71.99208284398998,
+                179.99874929500004,
+                84.00791653201003,
+            ),
+            (-3.4028234663852886e38,),
+        ),
+        (
+            2020,
+            (
+                -180.001249265,
+                -72.00041617728999,
+                179.99874929500004,
+                83.99958319871001,
+            ),
+            (-3.4028234663852886e38,),
+        ),
+    ],
+)
+def test_worldpop_uses_documented_year_specific_grid_values(
+    year: int,
+    expected_bounds: tuple[float, float, float, float],
+    expected_nodata: tuple[float, ...],
+) -> None:
+    assert _sources.WORLDPOP.expected_resolution == (1 / 120, 1 / 120)
+    assert _sources.WORLDPOP.expected_bounds_for(year) == expected_bounds
+    assert _sources.WORLDPOP.expected_nodata_for(year) == expected_nodata
+
+
+@pytest.mark.parametrize(
+    ("year", "bounds", "nodata"),
+    [
+        (2000, (0.0, 0.0, 2.0, 2.0), -100.0),
+        (2010, (3.0, 3.0, 5.0, 5.0), -200.0),
+        (2020, (6.0, 6.0, 8.0, 8.0), -300.0),
+    ],
+)
+def test_year_specific_grid_values_are_selected_for_validation(
+    tmp_path: Path,
+    year: int,
+    bounds: tuple[float, float, float, float],
+    nodata: float,
+) -> None:
+    path = write_raster(
+        tmp_path / f"population-{year}.tif",
+        transform=Affine(1, 0, bounds[0], 0, -1, bounds[3]),
+        nodata=nodata,
+        year=year,
+    )
+    source = tiny_source(
+        expected_bounds=None,
+        expected_nodata=None,
+        expected_bounds_by_year=MappingProxyType({year: bounds}),
+        expected_nodata_by_year=MappingProxyType({year: (nodata,)}),
+    )
+
+    _raster.validate_catalog_raster(
+        path,
+        source,
+        year,
+        require_year_marker=True,
+    )
+
+
+def test_year_specific_grid_values_can_disable_default_validation(
+    tmp_path: Path,
+) -> None:
+    path = write_raster(
+        tmp_path / "population-2020.tif",
+        transform=Affine(1, 0, 6.0, 0, -1, 8.0),
+        nodata=-300.0,
+    )
+    source = tiny_source(
+        expected_bounds=(0.0, 0.0, 2.0, 2.0),
+        expected_nodata=(-9999.0,),
+        expected_bounds_by_year=MappingProxyType({2020: None}),
+        expected_nodata_by_year=MappingProxyType({2020: None}),
+    )
+
+    observed = _raster.validate_catalog_raster(
+        path,
+        source,
+        2020,
+        require_year_marker=True,
+    )
+
+    assert observed["bounds"] == [6.0, 6.0, 8.0, 8.0]
+    assert observed["nodata"] == -300.0
 
 
 def test_receipt_validation_rejects_every_stale_shape(

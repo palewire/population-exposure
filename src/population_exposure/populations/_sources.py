@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from population_exposure.populations._models import (
     Acquisition,
@@ -30,7 +33,7 @@ class SourceSpec:
     landing_page: str
     url_template: str
     doi: str | None
-    doi_by_year: MappingProxyType[int, str]
+    doi_by_year: Mapping[int, str]
     license: str
     citation_template: str
     units: str
@@ -51,6 +54,12 @@ class SourceSpec:
     max_download_bytes: int
     exact_download_bytes: int | None = None
     publisher_checksum: str | None = None
+    expected_bounds_by_year: Mapping[int, tuple[float, float, float, float] | None] = (
+        field(default_factory=lambda: MappingProxyType({}))
+    )
+    expected_nodata_by_year: Mapping[int, tuple[float, ...] | None] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def source_info(self) -> SourceInfo:
         """Return the public source record."""
@@ -106,6 +115,21 @@ class SourceSpec:
             return None
         return self.archive_member_template.format(year=year)
 
+    def expected_bounds_for(
+        self,
+        year: int,
+    ) -> tuple[float, float, float, float] | None:
+        """Return documented raster bounds for a selected year."""
+        if year in self.expected_bounds_by_year:
+            return self.expected_bounds_by_year[year]
+        return self.expected_bounds
+
+    def expected_nodata_for(self, year: int) -> tuple[float, ...] | None:
+        """Return documented raster nodata values for a selected year."""
+        if year in self.expected_nodata_by_year:
+            return self.expected_nodata_by_year[year]
+        return self.expected_nodata
+
 
 _CC_BY_4 = "Creative Commons Attribution 4.0 International (CC BY 4.0)"
 _GLOBAL_TOTAL = (100_000_000.0, 20_000_000_000.0)
@@ -145,12 +169,32 @@ WORLDPOP = SourceSpec(
     filename_template="ppp_{year}_1km_Aggregated.tif",
     archive_member_template=None,
     expected_width=43_200,
-    expected_height=21_600,
+    expected_height=18_720,
     expected_resolution=(1 / 120, 1 / 120),
-    expected_bounds=(-180.0, -90.0, 180.0, 90.0),
-    expected_nodata=(-9999.0,),
+    expected_bounds=(
+        -180.001249265,
+        -71.99208284398998,
+        179.99874929500004,
+        84.00791653201003,
+    ),
+    expected_nodata=(-3.4028234663852886e38,),
     plausible_total=_GLOBAL_TOTAL,
     max_download_bytes=1_500_000_000,
+    expected_bounds_by_year=MappingProxyType(
+        {
+            2020: (
+                -180.001249265,
+                -72.00041617728999,
+                179.99874929500004,
+                83.99958319871001,
+            ),
+        }
+    ),
+    expected_nodata_by_year=MappingProxyType(
+        {
+            2000: (3.4028234663852886e38,),
+        }
+    ),
 )
 
 GHSL = SourceSpec(

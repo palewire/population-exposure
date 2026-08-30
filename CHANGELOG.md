@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
+  and an explicit source-checked regeneration script.
 - Add `assign_population()` for joining population values to tabular hazard rows
   by exact cell keys.
 - Extend `assign_population()` to GeoDataFrames, common vector paths, GeoTIFFs,
@@ -29,5 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   representable precision, while retaining low-value and aggregate checks.
 - Add an opt-in USGS PAGER Ridgecrest raster golden reproduction using the
   exact public hazard grid and a caller-supplied licensed LandScan 2017 file.
+
+### Fixed
+
+- Correct the catalogued grid bounds and nodata values for the official
+  WorldPop 1 km mosaics by selected year.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main
