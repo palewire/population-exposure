@@ -29,7 +29,9 @@ def test_publish_jobs_share_a_pinned_action_with_metadata_checks() -> None:
         workflow,
         flags=re.MULTILINE,
     )
+    metadata_verification_disabled = re.compile(
+        r"""(?im)^\s*verify[-_]metadata:\s*(?:["']?false["']?)(?:\s+#.*)?\s*$"""
+    )
 
     assert action_pins == [PUBLISH_ACTION_SHA, PUBLISH_ACTION_SHA]
-    assert "verify-metadata: false" not in workflow
-    assert "verify_metadata: false" not in workflow
+    assert not metadata_verification_disabled.search(workflow)
