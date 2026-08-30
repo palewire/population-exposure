@@ -483,6 +483,36 @@ def _array_digest(arrays: Sequence[NDArray[np.floating]]) -> str:
     return digest.hexdigest()
 
 
+def _positive_population_total(
+    values: NDArray[np.float64],
+    *,
+    context: str,
+) -> float:
+    """Return a finite, positive population total.
+
+    Args:
+        values: Population counts to sum.
+        context: Short description included in validation errors.
+
+    Returns:
+        The float64 population total.
+
+    Raises:
+        ValueError: If no positive finite population is present.
+
+    Examples:
+        >>> _positive_population_total(
+        ...     np.array([1.0, 2.0]),
+        ...     context="Example",
+        ... )
+        3.0
+    """
+    total = float(np.sum(values, dtype=np.float64))
+    if not np.isfinite(total) or total <= 0:
+        raise ValueError(f"{context} population total must be finite and positive.")
+    return total
+
+
 def _inclusive_threshold_sensitivity(
     baseline_daily_maximum: NDArray[np.float32],
     target_daily_maximum: NDArray[np.float32],
@@ -543,7 +573,10 @@ def _inclusive_threshold_sensitivity(
             dtype=np.float64,
         )
     )
-    population = float(np.sum(population_by_year[-1][selected], dtype=np.float64))
+    population = _positive_population_total(
+        population_by_year[-1][selected],
+        context="Inclusive threshold sensitivity",
+    )
     return {
         "comparison": "greater than or equal to",
         "additional_person_days": additional_person_days,
@@ -585,6 +618,10 @@ def _series_diagnostics(
     if population_by_year.shape[0] != len(BASELINE_YEARS) + 1:
         raise ValueError("Series diagnostics require baseline and target population.")
     selected = china_mask & np.isfinite(population_by_year).all(axis=0)
+    _positive_population_total(
+        population_by_year[-1][selected],
+        context="Series diagnostics",
+    )
     annual_baseline_exposure = (
         baseline_days_by_year.astype(np.float64) * population_by_year[:-1]
     )
@@ -688,6 +725,8 @@ def _build_rows(
         raise ValueError("Heatwave days must contain all 20 baseline years.")
     finite_population = np.isfinite(population_by_year).all(axis=0)
     selected = china_mask & finite_population
+    if not np.any(selected):
+        raise ValueError("China mask selected no cells with complete population.")
     if np.any(population_by_year[:, selected] < 0):
         raise ValueError("Selected population values must be non-negative.")
 
@@ -697,6 +736,10 @@ def _build_rows(
         dtype=np.float64,
     )
     target_population = population_by_year[-1]
+    _positive_population_total(
+        target_population[selected],
+        context="Selected 2019",
+    )
     additional_person_days = (
         target_days.astype(np.float64) * target_population - baseline_person_days
     )
@@ -774,11 +817,9 @@ def _exposure(rows: pd.DataFrame) -> tuple[float, float, float, float, float]:
             dtype=np.float64,
         )
     )
-    total_population = float(
-        np.sum(
-            assigned["population_65_plus_2019"].to_numpy(dtype=np.float64),
-            dtype=np.float64,
-        )
+    total_population = _positive_population_total(
+        assigned["population_65_plus_2019"].to_numpy(dtype=np.float64),
+        context="Assigned 2019",
     )
     target_person_days = float(np.sum(target_person_days_by_cell, dtype=np.float64))
     baseline_person_days = float(np.sum(baseline_person_days_by_cell, dtype=np.float64))

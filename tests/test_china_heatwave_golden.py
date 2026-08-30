@@ -109,6 +109,46 @@ def test_baseline_exposure_uses_each_baseline_years_population() -> None:
     assert result == pytest.approx((289.5, 100.0, 2.895, 300.0, 10.5))
 
 
+@pytest.mark.parametrize(
+    ("population_value", "mask_value", "message"),
+    [
+        (1.0, False, "selected no cells"),
+        (0.0, True, "population total must be finite and positive"),
+    ],
+)
+def test_empty_or_zero_population_selection_fails_clearly(
+    population_value: float,
+    mask_value: bool,
+    message: str,
+) -> None:
+    """Reject selections that cannot produce a per-person result.
+
+    Args:
+        population_value: Population assigned to every test year.
+        mask_value: Whether the single test cell is selected.
+        message: Expected validation-error text.
+
+    Returns:
+        None.
+
+    Examples:
+        Pytest runs both empty-mask and zero-population cases.
+    """
+    population = np.full((21, 1, 1), population_value, dtype=np.float64)
+
+    with pytest.raises(ValueError, match=message):
+        _build_rows(
+            np.array([1.0]),
+            np.array([2.0]),
+            population,
+            np.array([[mask_value]]),
+            np.ones((20, 1, 1), dtype=np.int16),
+            np.array([[1.0]]),
+            np.array([[3]], dtype=np.int16),
+            np.array([[2.0]]),
+        )
+
+
 @pytest.mark.integration
 def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     """Assign golden population by exact coordinates and aggregate exposure.
