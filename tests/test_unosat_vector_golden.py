@@ -24,6 +24,7 @@ FIXTURE_DIRECTORY = Path(__file__).parent / "data" / "unosat_fl20221125cod_basan
         "layer/../../outside.shp",
         r"layer\..\..\outside.shp",
         "layer/C:/outside.shp",
+        r"layer\C:\outside.shp",
     ],
 )
 def test_unosat_regeneration_rejects_unsafe_archive_paths(
@@ -51,6 +52,16 @@ def test_unosat_regeneration_extracts_only_complete_member_prefixes(
 
     assert (destination / "layer.shp").is_file()
     assert not (destination / "layer_backup.shp").exists()
+
+
+def test_extract_members_requires_a_prefix_boundary(tmp_path: Path) -> None:
+    archive = tmp_path / "source.zip"
+    with zipfile.ZipFile(archive, "w") as source:
+        source.writestr("cod_admin20.shp", "")
+        source.writestr("cod_admin2_backup.shp", "")
+
+    with pytest.raises(ValueError, match="does not contain requested members"):
+        extract_members(archive, tmp_path / "extracted", ("cod_admin2",))
 
 
 @pytest.mark.component

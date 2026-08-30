@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
 from population_exposure.populations._models import (
     Acquisition,
     PopulationMeaning,
     SelectionInfo,
     SourceInfo,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 Delivery = Literal["geotiff", "zip", "chambers", "manual"]
 
@@ -33,7 +33,7 @@ class SourceSpec:
     landing_page: str
     url_template: str
     doi: str | None
-    doi_by_year: MappingProxyType[int, str]
+    doi_by_year: Mapping[int, str]
     license: str
     citation_template: str
     units: str

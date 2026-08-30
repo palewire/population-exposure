@@ -7,6 +7,11 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 
+def _matches_requested_prefix(member: str, prefix: str) -> bool:
+    """Return whether one normalized member belongs to a requested prefix."""
+    return member == prefix or member.startswith((f"{prefix}.", f"{prefix}/"))
+
+
 def extract_members(
     archive: Path, destination: Path, prefixes: tuple[str, ...]
 ) -> None:
@@ -19,8 +24,7 @@ def extract_members(
 
     Returns:
         None. Raises ValueError if no requested members exist or any requested
-        path is absolute, has parent traversal, Windows separators, or a drive
-        prefix.
+        path is absolute, has parent traversal, or has a drive prefix.
 
     Examples:
         >>> extract_members(Path("source.zip"), Path("extract"), ("layer",))
@@ -30,18 +34,16 @@ def extract_members(
             name
             for name in source.namelist()
             if any(
-                name == prefix
-                or name.startswith((f"{prefix}.", f"{prefix}/", f"{prefix}\\"))
+                _matches_requested_prefix(name.replace("\\", "/"), prefix)
                 for prefix in prefixes
             )
         ]
         if not members:
             raise ValueError(f"Archive does not contain requested members: {archive}.")
         for member in members:
-            member_path = PurePosixPath(member)
+            member_path = PurePosixPath(member.replace("\\", "/"))
             if (
-                "\\" in member
-                or member_path.is_absolute()
+                member_path.is_absolute()
                 or ".." in member_path.parts
                 or any(":" in part for part in member_path.parts)
             ):

@@ -35,7 +35,8 @@ Regenerate only after deliberately accepting the roughly 910 MB download:
 
 ```sh
 uv run python scripts/regenerate_unosat_vector_golden.py \
-  --accept-download /tmp/unosat_fl20221125cod_basankusu
+  --accept-download \
+  /tmp/unosat_fl20221125cod_basankusu
 ```
 
 The script rejects changed source bytes and writes new checksums and measured
