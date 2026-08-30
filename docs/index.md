@@ -17,6 +17,8 @@ Exactextract install with the package.
 
 ## Quick starts
 
+The documentation uses the conventional `pe` alias.
+
 ### Table
 
 Give both tables the same cell key. Keys match exactly as written.
@@ -24,12 +26,12 @@ Give both tables the same cell key. Keys match exactly as written.
 ```python
 import pandas as pd
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 hazard = pd.DataFrame({"cell": ["A", "B"], "risk": ["high", "low"]})
 population = pd.DataFrame({"cell": ["A", "B"], "population": [100.0, 200.0]})
 
-exposed = assign_population(hazard, population, cell_columns="cell")
+exposed = pe.assign_population(hazard, population, cell_columns="cell")
 ```
 
 `exposed` keeps the hazard columns, index, and row order, with a new
@@ -43,10 +45,10 @@ GeoTIFF, an open Rasterio reader, or a catalog selection.
 ```python
 import geopandas as gpd
 
-from population_exposure import assign_population
+import population_exposure as pe
 
 hazard = gpd.read_file("flood-zones.geojson")
-exposed = assign_population(hazard, "population-counts.tif")
+exposed = pe.assign_population(hazard, "population-counts.tif")
 ```
 
 The result keeps the original geometry and coordinate system. Population cells
@@ -55,13 +57,13 @@ be fractional.
 
 ### Raster hazard
 
-Raster assignment stays lazy. It returns a `RasterAssignment` that reads
+Raster assignment stays lazy. It returns a `pe.RasterAssignment` that reads
 matching hazard and population arrays only when requested.
 
 ```python
-from population_exposure import assign_population
+import population_exposure as pe
 
-assignment = assign_population("hazard.tif", "worldpop-global-1km:2020")
+assignment = pe.assign_population("hazard.tif", "worldpop-global-1km:2020")
 
 for window, hazard_values, population_values in assignment.iter_blocks():
     # Analyze this bounded pair of masked NumPy arrays.
@@ -94,7 +96,7 @@ Vector inputs must have a coordinate system and valid, non-empty `Polygon` or
 
 ## Raster results
 
-`RasterAssignment` records the hazard grid through `shape`, `crs`, `transform`,
+`pe.RasterAssignment` records the hazard grid through `shape`, `crs`, `transform`,
 `bounds`, and `hazard_band`. Its `attrs` mapping records the assignment method,
 population totals, tolerance, and catalog facts when relevant.
 
@@ -131,9 +133,9 @@ malformed selections, and unsupported years raise errors. Ask the catalog about
 a selection before downloading it:
 
 ```python
-from population_exposure import populations
+import population_exposure as pe
 
-selection = populations.info("worldpop-global-1km:2020")
+selection = pe.populations.info("worldpop-global-1km:2020")
 print(selection.license)
 print(selection.citation)
 ```
@@ -157,9 +159,9 @@ LandScan requires registration and license acceptance at the
 then validate and copy it into the local cache:
 
 ```python
-from population_exposure import populations
+import population_exposure as pe
 
-path = populations.register(
+path = pe.populations.register(
     "landscan-global:2024",
     "/downloads/landscan-global-2024.tif",
 )
