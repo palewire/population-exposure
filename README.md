@@ -11,6 +11,8 @@ pip install population-exposure
 Python 3.11 or newer is required. GeoPandas, Pyogrio, Rasterio, Shapely, and
 Exactextract are installed as normal dependencies.
 
+Read the [full documentation](https://palewi.re/docs/population-exposure/).
+
 ## Public API
 
 The assignment operation is:
@@ -315,8 +317,8 @@ The package does not define bands or categories, group results, calculate
 shares, convert density rasters, or resolve overlapping polygons. Callers can
 use normal pandas, NumPy, or xarray operations after assignment.
 
-See [the data model](docs/data-model.md) and the executable
-[table](examples/basic.py), [vector](examples/vector.py), and
+See the [full documentation](https://palewi.re/docs/population-exposure/) and
+the executable [table](examples/basic.py), [vector](examples/vector.py), and
 [raster](examples/raster.py), and [catalog](examples/catalog.py) examples.
 
 ## Development

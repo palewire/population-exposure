@@ -28,44 +28,27 @@ but their file sizes may still be substantial.
 
 ## Quick start with a registry source
 
-WorldPop is a practical first source when an approximately 1 GB annual download
-is acceptable. Download the selected raster, then use its returned local path
-with your polygons.
+Use the observed 2024 Hurricane Helene wind swath published by the
+[National Hurricane Center](https://www.nhc.noaa.gov/gis/). This post-storm
+best-track data is not a forecast cone; 64 knots is hurricane-force wind.
 
 ```python
 import geopandas as gpd
-from shapely.geometry import box
 
 import population_exposure as pe
 
 population_path = pe.populations.download("worldpop-global-1km:2020")
-hazard = gpd.GeoDataFrame(
-    {"risk": ["high"]},
-    geometry=[box(0, 0, 1, 1)],
-    crs="EPSG:4326",
-)
-exposed = pe.assign_population(hazard, population_path)
+url = "zip+https://www.nhc.noaa.gov/gis/best_track/al092024_best_track.zip"
+winds = gpd.read_file(url, layer="AL092024_windswath")
+hurricane_force = winds[winds["RADII"] == 64].dissolve()
+exposed = pe.assign_population(hurricane_force, population_path)
+print(exposed["population"].sum())
 ```
 
 `pe.populations.download()` verifies and caches the selected raster. Calling it
 again with the same selection reuses the verified cached file unless
-`refresh=True`.
-
-## Hazard rasters
-
-Reuse the downloaded local path to align population values with a hazard raster.
-The result is a lazy `pe.RasterAssignment`.
-
-```python
-import population_exposure as pe
-
-population_path = pe.populations.download("worldpop-global-1km:2020")
-assignment = pe.assign_population("hazard.tif", population_path)
-
-for window, hazard_values, population_values in assignment.iter_blocks():
-    # Analyze this bounded pair of masked NumPy arrays.
-    pass
-```
+`refresh=True`. NWS information is public domain unless specifically noted
+otherwise; see the [NOAA/NWS use terms](https://www.weather.gov/disclaimer).
 
 ## `assign_population()` options
 

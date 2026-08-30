@@ -13,7 +13,7 @@ year = datetime.now(UTC).year
 copyright = f"{year}, {author}"
 
 language = "en"
-templates_path = ["_templates"]
+templates_path = []
 html_static_path = []
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 pygments_style = "sphinx"
