@@ -8,33 +8,66 @@ Estimate the number of people in any vector polygon or raster cell.
 pip install population-exposure
 ```
 
-### Using vector polygons
+## Population registry
 
-Pass a GeoPandas frame of non-overlapping polygons and a population-count
-GeoTIFF, an open Rasterio reader, or a catalog selection.
+The built-in registry provides verified population-count sources. Select one
+with its exact `source:year` identifier; `pe.populations.info()` reports its
+license, citation, and download details before anything is downloaded.
+
+| Source ID | Available years and grid | Access and size | Best suited for |
+| --- | --- | --- | --- |
+| `worldpop-global-1km` | 2000-2020, yearly; 30 arc-seconds (about 1 km) | Automatic CC BY download; roughly 0.8-1.2 GB per year | Annual residential estimates |
+| `ghsl-r2023a-mollweide-1km` | 1975-2020, every 5 years; 1 km World Mollweide equal-area grid | Automatic CC BY download; roughly 300 MB per epoch | Historical residential snapshots |
+| `gpwv4-r11-count` | 2000, 2005, 2010, 2015, 2020; 30 arc-seconds (about 1 km) | CC BY download requires your Earthdata token; roughly 405 MB per year | Those specific GPW count releases |
+| `chambers-hybrid` | 1950-2020, yearly; 0.25 degrees | Automatic CC BY download, but the shared source is 4.1 GB once | Long annual history when a coarser grid is suitable |
+| `landscan-global` | 2000-2024, yearly; 30 arc-seconds (about 1 km) | Manually download after ORNL registration and license acceptance; no redistribution | Ambient, 24-hour population estimates |
+
+The registry does not download LandScan or bypass its license terms. GPW needs
+an Earthdata token. WorldPop, GHSL, and Chambers download from their publishers,
+but their file sizes may still be substantial.
+
+## Quick start with a registry source
+
+WorldPop is a practical first source when an approximately 1 GB annual download
+is acceptable. List the available sources, inspect an exact selection, download
+it once, then use the returned local raster path with your polygons.
 
 ```python
 import geopandas as gpd
+from shapely.geometry import box
 
 import population_exposure as pe
 
-hazard = gpd.read_file("flood-zones.geojson")
-exposed = pe.assign_population(hazard, "population-counts.tif")
+for source in pe.populations.list():
+    print(source.source_id, source.supported_years)
+
+selection = "worldpop-global-1km:2020"
+details = pe.populations.info(selection)
+print(details.license)
+
+population_path = pe.populations.download(selection)
+hazard = gpd.GeoDataFrame(
+    {"risk": ["high"]},
+    geometry=[box(0, 0, 1, 1)],
+    crs="EPSG:4326",
+)
+exposed = pe.assign_population(hazard, population_path)
 ```
 
-The result keeps the original geometry and coordinate system. Population cells
-crossing a polygon boundary are counted by their covered share, so totals can
-be fractional.
+`pe.populations.download()` verifies and caches the selected raster. Calling it
+again with the same selection reuses the verified cached file unless
+`refresh=True`.
 
-### Raster hazard
+## Hazard rasters
 
-Raster assignment stays lazy. It returns a `pe.RasterAssignment` that reads
-matching hazard and population arrays only when requested.
+Reuse the downloaded local path to align population values with a hazard raster.
+The result is a lazy `pe.RasterAssignment`.
 
 ```python
 import population_exposure as pe
 
-assignment = pe.assign_population("hazard.tif", "worldpop-global-1km:2020")
+population_path = pe.populations.download("worldpop-global-1km:2020")
+assignment = pe.assign_population("hazard.tif", population_path)
 
 for window, hazard_values, population_values in assignment.iter_blocks():
     # Analyze this bounded pair of masked NumPy arrays.
@@ -96,53 +129,43 @@ to the caller and is never closed by this package. Keep caller-owned hazard and
 population readers open for as long as a `RasterAssignment` that refers to
 them is used.
 
-## Population catalog
+## Bring your own population raster
 
-Catalog selections must use the exact form `source:year`, where `source` is a
-source ID, such as `worldpop-global-1km:2020`. Bare source names, `latest`,
-malformed selections, and unsupported years raise errors. Ask the catalog about
-a selection before downloading it:
-
-```python
-import population_exposure as pe
-
-selection = pe.populations.info("worldpop-global-1km:2020")
-print(selection.license)
-print(selection.citation)
-```
-
-| Source ID | Years | Population meaning | How to obtain it |
-| --- | --- | --- | --- |
-| `worldpop-global-1km` | 2000-2020, yearly | Residential | Automatic official WorldPop download |
-| `ghsl-r2023a-mollweide-1km` | 1975-2020, every 5 years | Residential | Automatic official JRC download |
-| `gpwv4-r11-count` | 2000, 2005, 2010, 2015, 2020 | Residential | Official Earthdata download with a user-owned token, or manual registration |
-| `chambers-hybrid` | 1950-2020, yearly | Residential | Automatic Zenodo download; the selected year is derived from its 21 age bands |
-| `landscan-global` | 2000-2024, yearly | Ambient | Manual ORNL download and registration |
-
-WorldPop, GHSL, and Chambers download automatically. GPW uses a user-owned
-Earthdata token supplied as `earthdata_token=` to `populations.download()`, or
-as `EARTHDATA_TOKEN` for direct catalog assignment. The token is only used for
-the official request; it is not stored. GPW is a population-count product, not
-density.
-
-LandScan requires registration and license acceptance at the
-[ORNL portal](https://landscan.ornl.gov/). Download one selected year yourself,
-then validate and copy it into the local cache:
+Use a one-band GeoTIFF containing finite, non-negative population counts when
+you already have an appropriate local dataset. For polygon hazards, pass its
+path directly:
 
 ```python
+import geopandas as gpd
+
 import population_exposure as pe
 
-path = pe.populations.register(
-    "landscan-global:2024",
-    "/downloads/landscan-global-2024.tif",
-)
+hazard = gpd.read_file("flood-zones.geojson")
+exposed = pe.assign_population(hazard, "population-counts.tif")
 ```
 
-`populations.register()` also accepts a locally acquired GPW file. It checks
-the source, year, grid, and population counts without changing the original
-file. `populations.download()` caches verified catalog data; use `offline=True`
-or `POPULATION_EXPOSURE_OFFLINE=1` to require an already cached or registered
-file.
+The result keeps the original geometry and coordinate system. Population cells
+crossing a polygon boundary are counted by their covered share, so totals can
+be fractional.
+
+## Tabular data
+
+For advanced use with tables, give the hazard and population tables the same
+complete, unique cell key:
+
+```python
+import pandas as pd
+
+import population_exposure as pe
+
+hazard = pd.DataFrame({"cell": ["A", "B"], "risk": ["high", "low"]})
+population = pd.DataFrame({"cell": ["A", "B"], "population": [100.0, 200.0]})
+
+exposed = pe.assign_population(hazard, population, cell_columns="cell")
+```
+
+`exposed` keeps the hazard columns, index, and row order, with a new
+`population` column.
 
 ## API reference
 

@@ -1,10 +1,6 @@
 # population-exposure
 
-`population-exposure` assigns population counts to hazard rows, polygon
-features, or raster cells. Use a local population dataset or select one explicit
-source and year from the built-in catalog. The package handles exact table
-joins, vector reprojection and coverage, or raster alignment. Grouping and
-analysis remain ordinary pandas or NumPy work.
+Estimate the number of people in any vector polygon or raster cell.
 
 ## Install
 
