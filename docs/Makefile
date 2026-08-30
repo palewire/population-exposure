@@ -1,9 +1,10 @@
 # Minimal makefile for Sphinx documentation
 
 SPHINXOPTS ?=
-SPHINXBUILD ?= sphinx-build
-SOURCEDIR = .
-BUILDDIR = _build
+RUN_DOCS ?= uv run --directory .. --group docs
+SPHINXBUILD ?= $(RUN_DOCS) sphinx-build
+SOURCEDIR = docs
+BUILDDIR = docs/_build
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
@@ -14,4 +15,4 @@ help:
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
 livehtml:
-	sphinx-autobuild -b html $(SOURCEDIR) $(BUILDDIR)/html
+	$(RUN_DOCS) sphinx-autobuild -b html $(SOURCEDIR) $(BUILDDIR)/html

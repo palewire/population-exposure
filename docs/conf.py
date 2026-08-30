@@ -56,6 +56,10 @@ intersphinx_mapping = {
 
 linkcheck_timeout = 10
 linkcheck_retries = 2
+# NASA SEDAC's authoritative GPW page times out under automated link checking.
+linkcheck_ignore = [
+    r"https://sedac\.ciesin\.columbia\.edu/data/set/gpw-v4-population-count-rev11"
+]
 
 html_theme = "palewire"
 html_baseurl = "https://palewi.re/docs/population-exposure/"

@@ -14,13 +14,13 @@ The built-in registry provides verified population-count sources. Select one
 with its exact `source:year` identifier; `pe.populations.info()` reports its
 license, citation, and download details before anything is downloaded.
 
-| Source ID | Available years and grid | Access and size | Best suited for |
-| --- | --- | --- | --- |
-| `worldpop-global-1km` | 2000-2020, yearly; 30 arc-seconds (about 1 km) | Automatic CC BY download; roughly 0.8-1.2 GB per year | Annual residential estimates |
-| `ghsl-r2023a-mollweide-1km` | 1975-2020, every 5 years; 1 km World Mollweide equal-area grid | Automatic CC BY download; roughly 300 MB per epoch | Historical residential snapshots |
-| `gpwv4-r11-count` | 2000, 2005, 2010, 2015, 2020; 30 arc-seconds (about 1 km) | CC BY download requires your Earthdata token; roughly 405 MB per year | Those specific GPW count releases |
-| `chambers-hybrid` | 1950-2020, yearly; 0.25 degrees | Automatic CC BY download, but the shared source is 4.1 GB once | Long annual history when a coarser grid is suitable |
-| `landscan-global` | 2000-2024, yearly; 30 arc-seconds (about 1 km) | Manually download after ORNL registration and license acceptance; no redistribution | Ambient, 24-hour population estimates |
+| Source ID | Publisher | Available years and grid | Access and size | Best suited for |
+| --- | --- | --- | --- | --- |
+| `worldpop-global-1km` | [WorldPop and CIESIN](https://hub.worldpop.org/geodata/listing?id=64) | 2000-2020, yearly; 30 arc-seconds (about 1 km) | Automatic CC BY download; roughly 0.8-1.2 GB per year | Annual residential estimates |
+| `ghsl-r2023a-mollweide-1km` | [European Commission Joint Research Centre](https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php) | 1975-2020, every 5 years; 1 km World Mollweide equal-area grid | Automatic CC BY download; roughly 300 MB per epoch | Historical residential snapshots |
+| `gpwv4-r11-count` | [CIESIN, Columbia University and NASA SEDAC](https://sedac.ciesin.columbia.edu/data/set/gpw-v4-population-count-rev11) | 2000, 2005, 2010, 2015, 2020; 30 arc-seconds (about 1 km) | CC BY download requires your Earthdata token; roughly 405 MB per year | Those specific GPW count releases |
+| `chambers-hybrid` | [Jonathan Chambers](https://zenodo.org/records/6011021) | 1950-2020, yearly; 0.25 degrees | Automatic CC BY download, but the shared source is 4.1 GB once | Long annual history when a coarser grid is suitable |
+| `landscan-global` | [Oak Ridge National Laboratory](https://landscan.ornl.gov/) | 2000-2024, yearly; 30 arc-seconds (about 1 km) | Manually download after ORNL registration and license acceptance; no redistribution | Ambient, 24-hour population estimates |
 
 The registry does not download LandScan or bypass its license terms. GPW needs
 an Earthdata token. WorldPop, GHSL, and Chambers download from their publishers,
