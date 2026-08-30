@@ -39,6 +39,17 @@ population = pe.populations.download("worldpop-global-1km:2020")
 again with the same selection reuses the verified cached file unless
 `refresh=True`.
 
+LandScan requires a separate, manually acquired annual GeoTIFF. After accepting
+the ORNL terms and downloading the 2024 file, register it once to obtain the
+local path used below:
+
+```python
+landscan_population = pe.populations.register(
+    "landscan-global:2024",
+    "/path/to/your-2024-landscan.tif",
+)
+```
+
 ## Quick start with a registry source
 
 Use the observed 2024 Hurricane Helene wind swath published by the
@@ -59,6 +70,50 @@ print(exposed["population"].sum())
 
 NWS information is public domain unless specifically noted otherwise; see the
 [NOAA/NWS use terms](https://www.weather.gov/disclaimer).
+
+## Raster hazard exposure
+
+The [M 7.1 Ridgecrest earthquake](https://earthquake.usgs.gov/earthquakes/eventpage/ci38457511)
+struck near Searles Valley, California, on July 6, 2019. Its official USGS
+ShakeMap archive includes a 10 MB Modified Mercalli Intensity (MMI) grid.
+The archive uses an ESRI float raster, so this example saves its MMI field as a
+GeoTIFF with its documented WGS 84 grid before assigning population.
+
+```python
+from pathlib import Path
+from urllib.request import urlretrieve
+from zipfile import ZipFile
+
+import rasterio
+
+import population_exposure as pe
+
+archive_url = (
+    "https://earthquake.usgs.gov/product/shakemap/ci38457511/"
+    "atlas/1594160054783/download/raster.zip"
+)
+archive_path = Path("ridgecrest-shakemap-raster.zip")
+hazard_directory = Path("ridgecrest-shakemap")
+urlretrieve(archive_url, archive_path)
+with ZipFile(archive_path) as archive:
+    archive.extract("mmi_mean.flt", hazard_directory)
+    archive.extract("mmi_mean.hdr", hazard_directory)
+
+with rasterio.open(hazard_directory / "mmi_mean.flt") as source:
+    profile = source.profile | {"driver": "GTiff", "crs": "EPSG:4326"}
+    with rasterio.open("ridgecrest-mmi.tif", "w", **profile) as destination:
+        destination.write(source.read(1), 1)
+
+assignment = pe.assign_population("ridgecrest-mmi.tif", landscan_population)
+mmi, people = assignment.read()
+strong_shaking_population = people[mmi >= 6].sum()
+print(strong_shaking_population)
+```
+
+This is raster-to-raster assignment: population counts are regridded onto the
+MMI cells. The final sum is the people in cells with MMI 6 or greater, a
+strong-or-worse shaking category. It is different from the vector coverage
+allocation above and the exact table-coordinate join below.
 
 ## `assign_population()` options
 
