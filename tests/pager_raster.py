@@ -264,8 +264,10 @@ def _required_integer(attributes: Mapping[str, str], name: str) -> int:
         2
     """
     value = attributes.get(name)
+    if value is None:
+        raise ValueError(f"PAGER grid attribute {name!r} is required.")
     try:
-        return int(value) if value is not None else -1
+        return int(value)
     except ValueError as error:
         raise ValueError(
             f"PAGER grid attribute {name!r} must be an integer."
@@ -296,7 +298,12 @@ def _validate_coordinates(
     """
     for name in ("nominal_lon_spacing", "nominal_lat_spacing"):
         nominal = float(attributes.get(name, "nan"))
-        if not np.isclose(nominal, _ARC_MINUTE, rtol=0, atol=0.000051):
+        if not np.isclose(
+            nominal,
+            _ARC_MINUTE,
+            rtol=0,
+            atol=_COORDINATE_ROUNDING_TOLERANCE,
+        ):
             raise ValueError(f"PAGER {name} is not one arc minute: {nominal!r}.")
     expected_longitudes = np.round(longitudes / _ARC_MINUTE) * _ARC_MINUTE
     expected_latitudes = np.round(latitudes / _ARC_MINUTE) * _ARC_MINUTE

@@ -24,6 +24,7 @@ from tests.pager_raster import (
     PAGER_XML_SHA256,
     PAGER_XML_URL,
     PUBLISHED_EXPOSURE,
+    _required_integer,
     aggregate_pager_exposure,
     parse_pager_grid,
     write_pager_geotiff,
@@ -80,6 +81,47 @@ def test_pager_bands_use_half_open_boundaries_and_sum_resampling(
         (26, 34, 42, 50, 58, 106, 114, 122, 130, 138)
     )
     assert result.attrs["population_aligned_total"] == pytest.approx(820)
+
+
+def test_pager_xml_parser_preserves_center_coordinates_and_row_order(
+    tmp_path: Path,
+) -> None:
+    """Pin XML center-to-corner conversion and north-to-south ordering."""
+    xml_path = tmp_path / "grid.xml"
+    xml_path.write_text(
+        """<?xml version="1.0"?>
+<shakemap_grid xmlns="http://earthquake.usgs.gov/eqcenter/shakemap"
+ event_id="ci38457511" process_timestamp="2019-07-06T15:13:28">
+ <grid_specification nlon="2" nlat="2"
+  nominal_lon_spacing="0.0167" nominal_lat_spacing="0.0167"/>
+ <grid_field index="1" name="LON"/>
+ <grid_field index="2" name="LAT"/>
+ <grid_field index="3" name="MMI"/>
+ <grid_data>
+  -0.0167 0.0167 5.5
+  0.0000 0.0167 6.5
+  -0.0167 0.0000 7.5
+  0.0000 0.0000 8.5
+ </grid_data>
+</shakemap_grid>
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_pager_grid(xml_path)
+
+    np.testing.assert_array_equal(parsed.mmi, [[5.5, 6.5], [7.5, 8.5]])
+    assert tuple(parsed.transform)[:6] == pytest.approx(
+        (1 / 60, 0, -0.025, 0, -1 / 60, 0.025)
+    )
+
+
+def test_required_pager_attribute_errors_are_explicit() -> None:
+    """Report missing and malformed XML integer attributes distinctly."""
+    with pytest.raises(ValueError, match="is required"):
+        _required_integer({}, "nlon")
+    with pytest.raises(ValueError, match="must be an integer"):
+        _required_integer({"nlon": "two"}, "nlon")
 
 
 @pytest.mark.live
