@@ -1,7 +1,8 @@
 # Minimal makefile for Sphinx documentation
 
 SPHINXOPTS ?=
-RUN_DOCS ?= uv run --directory .. --group docs
+UV ?= uv
+RUN_DOCS ?= $(if $(UV_PYTHON),UV_PYTHON=$(UV_PYTHON)) $(UV) run --directory .. --group docs
 SPHINXBUILD ?= $(RUN_DOCS) sphinx-build
 SOURCEDIR = docs
 BUILDDIR = docs/_build
