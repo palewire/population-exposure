@@ -1,0 +1,91 @@
+{
+  "event_id": "ci38457511",
+  "product_timestamp": "1562429005114",
+  "source_artifacts": {
+    "grid": {
+      "url": "https://earthquake.usgs.gov/product/losspager/ci38457511/us/1562429005114/grid.xml",
+      "sha256": "bc412154745d00442bb9ad0ffbfdfd3e168acbf28646183d1a88d96f711fe063"
+    },
+    "exposures": {
+      "url": "https://earthquake.usgs.gov/product/losspager/ci38457511/us/1562429005114/json/exposures.json",
+      "sha256": "a4987b1990db0ca536c2c97175340cbe486d9362d37b7d5fe7cd3353d590f227"
+    },
+    "pager": {
+      "url": "https://earthquake.usgs.gov/product/losspager/ci38457511/us/1562429005114/pager.xml",
+      "sha256": "58e92b0d31383dd38203d457e6773667864ee95be969a92bd96f4cb5b4796639"
+    }
+  },
+  "grid": {
+    "field": "MMI",
+    "crs": "EPSG:4326",
+    "coordinate_semantics": "listed LON/LAT values are pixel centers",
+    "row_order": "north_to_south",
+    "spacing_degrees": 0.016666666666666666,
+    "transform": [
+      0.016666666666666666,
+      0.0,
+      -122.85833333333333,
+      0.0,
+      -0.016666666666666666,
+      40.19166666666666
+    ],
+    "shape": [
+      547,
+      671
+    ],
+    "nodata": -9999.0
+  },
+  "published_exposure": [
+    0,
+    10642442,
+    17902502,
+    21545813,
+    601968,
+    1721,
+    44915,
+    200,
+    0,
+    0
+  ],
+  "published_bands": {
+    "VI": {
+      "interval": "[5.5, 6.5)",
+      "population": 1721
+    },
+    "VII": {
+      "interval": "[6.5, 7.5)",
+      "population": 44915
+    },
+    "VIII": {
+      "interval": "[7.5, 8.5)",
+      "population": 200
+    },
+    "IX": {
+      "interval": "[8.5, 9.5)",
+      "population": 0
+    },
+    "X": {
+      "interval": "[9.5, 10.5)",
+      "population": 0
+    },
+    "VI_plus": 46836
+  },
+  "population_source": {
+    "selection": "landscan-global:2017",
+    "publisher": "Oak Ridge National Laboratory",
+    "license": "ORNL LandScan End User License Agreement; local licensed input only",
+    "basis": "Inference from PAGER documentation naming LandScan and release chronology; the PAGER run log does not expose the annual release."
+  },
+  "fixture": {
+    "path": "tests/fixtures/pager_ridgecrest/mmi.tif",
+    "sha256": "54415a3ef0fa5212981bb49cfb15fb9940df55605e0dac14f95cf0696bd4fcf9",
+    "legal_note": "Derived hazard intensity values from a public USGS artifact; no LandScan population values are included."
+  },
+  "method": {
+    "conversion": "Snap the four-decimal center coordinates to one arc-minute centers, use half-cell corner offsets, and preserve north-to-south rows.",
+    "assignment": "Use population_exposure raster sum resampling, then classify each hazard cell with PAGER half-open MMI intervals.",
+    "relationship": "A one-arc-minute hazard cell receives the coverage-weighted sum of its 30-arc-second population cells. This matches per-population-cell classification only where the hazard category is constant across that cell group; the live comparison measures the residual.",
+    "live_tolerance_people": 0.5,
+    "live_tolerance_basis": "Integer LandScan cell counts summed as float64; tolerance is one half person for numerical rounding only, not a broad source-difference allowance."
+  }
+}
