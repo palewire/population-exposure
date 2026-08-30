@@ -266,6 +266,32 @@ def test_year_specific_grid_values_are_selected_for_validation(
     )
 
 
+def test_year_specific_grid_values_can_disable_default_validation(
+    tmp_path: Path,
+) -> None:
+    path = write_raster(
+        tmp_path / "population-2020.tif",
+        transform=Affine(1, 0, 6.0, 0, -1, 8.0),
+        nodata=-300.0,
+    )
+    source = tiny_source(
+        expected_bounds=(0.0, 0.0, 2.0, 2.0),
+        expected_nodata=(-9999.0,),
+        expected_bounds_by_year=MappingProxyType({2020: None}),
+        expected_nodata_by_year=MappingProxyType({2020: None}),
+    )
+
+    observed = _raster.validate_catalog_raster(
+        path,
+        source,
+        2020,
+        require_year_marker=True,
+    )
+
+    assert observed["bounds"] == [6.0, 6.0, 8.0, 8.0]
+    assert observed["nodata"] == -300.0
+
+
 def test_receipt_validation_rejects_every_stale_shape(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

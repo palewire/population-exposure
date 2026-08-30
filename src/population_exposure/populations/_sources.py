@@ -52,9 +52,9 @@ class SourceSpec:
     exact_download_bytes: int | None = None
     publisher_checksum: str | None = None
     expected_bounds_by_year: MappingProxyType[
-        int, tuple[float, float, float, float]
+        int, tuple[float, float, float, float] | None
     ] = field(default_factory=lambda: MappingProxyType({}))
-    expected_nodata_by_year: MappingProxyType[int, tuple[float, ...]] = field(
+    expected_nodata_by_year: MappingProxyType[int, tuple[float, ...] | None] = field(
         default_factory=lambda: MappingProxyType({})
     )
 
@@ -117,11 +117,15 @@ class SourceSpec:
         year: int,
     ) -> tuple[float, float, float, float] | None:
         """Return documented raster bounds for a selected year."""
-        return self.expected_bounds_by_year.get(year, self.expected_bounds)
+        if year in self.expected_bounds_by_year:
+            return self.expected_bounds_by_year[year]
+        return self.expected_bounds
 
     def expected_nodata_for(self, year: int) -> tuple[float, ...] | None:
         """Return documented raster nodata values for a selected year."""
-        return self.expected_nodata_by_year.get(year, self.expected_nodata)
+        if year in self.expected_nodata_by_year:
+            return self.expected_nodata_by_year[year]
+        return self.expected_nodata
 
 
 _CC_BY_4 = "Creative Commons Attribution 4.0 International (CC BY 4.0)"
