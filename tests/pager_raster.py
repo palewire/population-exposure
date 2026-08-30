@@ -37,7 +37,7 @@ PAGER_XML_SHA256 = "58e92b0d31383dd38203d457e6773667864ee95be969a92bd96f4cb5b479
 _PAGER_NAMESPACE = "http://earthquake.usgs.gov/eqcenter/shakemap"
 _ARC_MINUTE = 1.0 / 60.0
 _COORDINATE_ROUNDING_TOLERANCE = 0.000051
-MMI_BAND_BOUNDARIES = (5.5, 6.5, 7.5, 8.5, 9.5, 10.5)
+MMI_BAND_BOUNDARIES = tuple(0.5 + index for index in range(11))
 PUBLISHED_EXPOSURE = (0, 10642442, 17902502, 21545813, 601968, 1721, 44915, 200, 0, 0)
 
 
@@ -237,10 +237,10 @@ def aggregate_pager_exposure(
         valid = ~(hazard_mask | population_mask)
         hazard_values = np.asarray(hazard.data, dtype=np.float64)
         population_values = np.asarray(population.data, dtype=np.float64)
-        if np.any(valid & ((hazard_values < 1.5) | (hazard_values >= 10.5))):
-            raise ValueError("PAGER MMI values must be in [1.5, 10.5).")
-        band = np.digitize(hazard_values, MMI_BAND_BOUNDARIES, right=False) + 5
-        for mmi in range(6, 11):
+        if np.any(valid & ((hazard_values < 0.5) | (hazard_values >= 10.5))):
+            raise ValueError("PAGER MMI values must be in [0.5, 10.5).")
+        band = np.digitize(hazard_values, MMI_BAND_BOUNDARIES, right=False)
+        for mmi in range(1, 11):
             selected = valid & (band == mmi)
             totals[mmi - 1] += population_values[selected].sum(dtype=np.float64)
     return tuple(float(value) for value in totals)

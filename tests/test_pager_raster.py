@@ -66,17 +66,20 @@ def test_pager_bands_use_half_open_boundaries_and_sum_resampling(
     """Pin PAGER intervals and coverage-weighted population alignment."""
     hazard_path = tmp_path / "hazard.tif"
     population_path = tmp_path / "population.tif"
-    hazard = np.array([[5.5, 6.5, 7.5], [8.5, 9.5, 10.4]], dtype=np.float32)
-    population = np.arange(1, 25, dtype=np.float32).reshape(4, 6)
+    hazard = np.array(
+        [[0.5, 1.5, 2.5, 3.5, 4.5], [5.5, 6.5, 7.5, 8.5, 9.5]],
+        dtype=np.float32,
+    )
+    population = np.arange(1, 41, dtype=np.float32).reshape(4, 10)
     _write_raster(hazard_path, hazard, from_origin(0, 2, 1, 1))
     _write_raster(population_path, population, from_origin(0, 2, 0.5, 0.5))
 
     result = assign_population(hazard_path, population_path)
 
     assert aggregate_pager_exposure(result) == pytest.approx(
-        (0, 0, 0, 0, 0, 18, 26, 34, 66, 156)
+        (26, 34, 42, 50, 58, 106, 114, 122, 130, 138)
     )
-    assert result.attrs["population_aligned_total"] == pytest.approx(300)
+    assert result.attrs["population_aligned_total"] == pytest.approx(820)
 
 
 @pytest.mark.live
