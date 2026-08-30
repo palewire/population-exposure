@@ -1,0 +1,75 @@
+{
+  "district": {
+    "name": "Basankusu",
+    "pcode": "CD4107"
+  },
+  "fixture": "UNOSAT FL20221125COD Basankusu 2022 maximum surface water",
+  "fixture_files": {
+    "hazard.geojson": "6cb4d271e8938458ee6d722d9ed46907f698a556978b34a7fbafe5afb90e0245",
+    "population.tif": "623285515abc1a93bf4552b7919816bc9f34cc9f4db0285f618d876176a7079e"
+  },
+  "measured": {
+    "area_sqkm": 393.7350537448322,
+    "cell_center_difference_from_published": -495.01105133358396,
+    "cell_center_population": 9075.679271936417,
+    "crop_population": 496266.6160110235,
+    "crop_raster_bounds": [
+      19.315416604400014,
+      0.349583533310009,
+      20.698749932200013,
+      1.707916861210009
+    ],
+    "crop_raster_shape": [
+      163,
+      166
+    ],
+    "exactextract_difference_from_published": 123.2564365047765,
+    "exactextract_population": 9693.946759774777,
+    "fixture_difference_from_full_source": -1.8363334675086662e-06,
+    "full_source_exactextract_difference_from_published": 123.25643834110997,
+    "full_source_exactextract_population": 9693.94676161111
+  },
+  "methodology": {
+    "cell_center_reference": "Raster cell centers included by geometry_mask; a transparent reference for ArcGIS-style edge handling, not an ArcGIS result.",
+    "exactextract": "Coverage-weighted population-count sum.",
+    "published_method_limit": "The workbook names its sources but does not publish its ArcGIS zonal-statistics edge rule."
+  },
+  "published": {
+    "area_sqkm": 393.735,
+    "population": 9570.69032327
+  },
+  "source_layer": {
+    "area_sqkm": 6760.57,
+    "crs": "EPSG:4326",
+    "geometry_valid_before_repair": false,
+    "invalid_reason": "Ring Self-intersection[22.8028081500001 3.83530778600004]",
+    "layer": "FL20221125COD_SHP/VIIRS_20221101_20221128_MaximumFloodWaterExtent_Equateur_NordUbangi_SudUbangiProvinces_DRC.shp",
+    "repair": "shapely.make_valid",
+    "sensor": "VIIRS-NOAA",
+    "sensor_date": "2022-11-28",
+    "source_feature_count": 1,
+    "source_geometry_sha256": "67130e69c990c9795e2c2ba6e9f088111b03a1d9fc255b116af0727093883223",
+    "source_overlap_pairs": 0,
+    "water_class": "Maximum Satellite Observed Water (Cumulative)"
+  },
+  "sources": {
+    "ocha_boundaries": {
+      "release": "COD-AB v01, valid 2019-09-11",
+      "sha256": "a819758bebacb042a167701c84e0a227c96ad9ee769b39dfa9d3ec70977161fd",
+      "url": "https://data.humdata.org/dataset/f42132b9-8cc6-4201-b020-9259c56e8868/resource/7514482b-f7af-4654-8ea2-e8a34a6acb6a/download/cod_admin_boundaries.shp.zip"
+    },
+    "unosat_vector": {
+      "sha256": "1003786f22094ca038b2ab39576614e4ac5d38606f18880257be83d84d819f33",
+      "url": "https://unosat.org/static/unosat_filesystem/3456/FL20221125COD_SHP.zip"
+    },
+    "unosat_workbook": {
+      "sha256": "e6a68d2b0f1ad8d78c00d126cc04e9fca2ca96c5493727d54219f76b894970c6",
+      "url": "https://unosat.org/static/unosat_filesystem/3456/UNOSAT_Population_Exposure_FL20221125COD_November_2019_2020_2021_2022_Equateur_NordUbangi_SudUbangi_RDC_FR.xlsx"
+    },
+    "worldpop": {
+      "catalog_selection": "worldpop-global-1km:2020",
+      "sha256": "d98f9efd911ed4afed696dff9024b20a4e3ec5bf6c0e21f241a26725b7df0866",
+      "url": "https://data.worldpop.org/GIS/Population/Global_2000_2020/2020/0_Mosaicked/ppp_2020_1km_Aggregated.tif"
+    }
+  }
+}

@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
+  and an explicit source-checked regeneration script.
 - Add `assign_population()` for joining population values to tabular hazard rows
   by exact cell keys.
 - Extend `assign_population()` to GeoDataFrames, common vector paths, GeoTIFFs,
@@ -27,5 +29,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   CIESIN's official one-degree count grid for the same catalog year.
 - Base GPW parity tolerances on each official coarse float32 count's
   representable precision, while retaining low-value and aggregate checks.
+
+### Fixed
+
+- Correct the catalogued dimensions and bounds for the official WorldPop 2020
+  global 1 km mosaic.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main
