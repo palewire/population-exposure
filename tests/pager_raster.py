@@ -247,7 +247,7 @@ def aggregate_pager_exposure(
 
 
 def _required_integer(attributes: Mapping[str, str], name: str) -> int:
-    """Read one required positive integer XML attribute.
+    """Read one required integer XML attribute.
 
     Args:
         attributes: XML attribute mapping.

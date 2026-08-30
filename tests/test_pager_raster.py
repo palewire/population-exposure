@@ -73,7 +73,12 @@ def test_pager_bands_use_half_open_boundaries_and_sum_resampling(
     )
     population = np.arange(1, 41, dtype=np.float32).reshape(4, 10)
     _write_raster(hazard_path, hazard, from_origin(0, 2, 1, 1))
-    _write_raster(population_path, population, from_origin(0, 2, 0.5, 0.5))
+    _write_raster(
+        population_path,
+        population,
+        from_origin(0, 2, 0.5, 0.5),
+        population=True,
+    )
 
     result = assign_population(hazard_path, population_path)
 
@@ -138,9 +143,7 @@ def test_pager_raster_reproduces_published_exposure(
         )
     population_path = Path(licensed_path).expanduser()
     if not population_path.is_file():
-        raise AssertionError(
-            f"PAGER_LANDSCAN_2017_PATH is not a file: {population_path}"
-        )
+        pytest.fail(f"PAGER_LANDSCAN_2017_PATH is not a file: {population_path}")
 
     grid_xml = tmp_path / "grid.xml"
     download_file(
@@ -177,13 +180,20 @@ def test_pager_raster_reproduces_published_exposure(
     )
 
 
-def _write_raster(path: Path, values: np.ndarray, transform) -> None:
+def _write_raster(
+    path: Path,
+    values: np.ndarray,
+    transform,
+    *,
+    population: bool = False,
+) -> None:
     """Write one small EPSG:4326 count or hazard raster for a test.
 
     Args:
         path: Destination GeoTIFF path.
         values: Two-dimensional values to write.
         transform: Pixel-corner transform for the values.
+        population: Whether to mark the raster as population counts.
 
     Returns:
         None.
@@ -204,4 +214,5 @@ def _write_raster(path: Path, values: np.ndarray, transform) -> None:
         nodata=-9999.0,
     ) as dataset:
         dataset.write(values, 1)
-        dataset.update_tags(population_semantics="count")
+        if population:
+            dataset.update_tags(population_semantics="count")
