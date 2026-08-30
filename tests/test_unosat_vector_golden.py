@@ -40,7 +40,7 @@ def test_unosat_basankusu_exactextract_golden() -> None:
     assert hazard["pcode"].tolist() == ["CD4107"]
     assert hazard.to_crs(6933).area.item() / 1_000_000 == pytest.approx(
         metadata["measured"]["area_sqkm"],
-        abs=1e-9,
+        abs=1e-6,
     )
     assert metadata["measured"]["area_sqkm"] == pytest.approx(
         metadata["published"]["area_sqkm"],

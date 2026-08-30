@@ -136,7 +136,14 @@ def extract_members(
         ]
         if not members:
             raise ValueError(f"Archive does not contain requested members: {archive}.")
-        source.extractall(destination, members=members)
+        for member in members:
+            member_path = Path(member)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise ValueError(f"Unsafe path in archive: {member!r}")
+            target = destination / member_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with source.open(member) as src, target.open("wb") as dst:
+                dst.write(src.read())
 
 
 def crop_population(
@@ -167,7 +174,7 @@ def crop_population(
             width=window.width,
             transform=window_transform(window, source.transform),
             compress="deflate",
-            predictor=2,
+            predictor=3,
             zlevel=9,
         )
         with rasterio.open(destination, "w", **profile) as output:
