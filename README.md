@@ -42,10 +42,10 @@ def assign_population(
 metadata and source references, not a long DataFrame or eagerly loaded global
 array.
 
+The documentation uses the conventional `pe` alias.
+
 The `pe.populations` namespace lists, describes, downloads, and registers catalog
 data:
-
-The documentation uses the conventional `pe` alias.
 
 ```python
 import population_exposure as pe
