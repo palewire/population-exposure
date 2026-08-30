@@ -8,7 +8,7 @@ COVERAGE_FAIL_UNDER ?= 80
 TEST_ARGS ?=
 RUN = $(if $(UV_PYTHON),UV_PYTHON=$(UV_PYTHON)) $(UV) run
 
-.PHONY: all help bootstrap install install-all install-dev install-test check verify diff-check lint format-check format fix type-check dependency-check workflow-check manifest-check test test-serial coverage build package-check package-verify hooks clean
+.PHONY: all help bootstrap install install-all install-dev install-test check verify diff-check lint format-check format fix type-check dependency-check workflow-check manifest-check test test-serial coverage build package-check package-verify hooks regenerate-china-heatwave clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -22,7 +22,7 @@ install-all: ## Install every optional dependency group
 	$(UV) sync --all-groups --locked
 
 install-dev: ## Install dependencies for static checks
-	$(UV) sync --group dev --locked
+	$(UV) sync --group dev --group validation --locked
 
 install-test: ## Install dependencies for tests
 	$(UV) sync --group test --locked $(if $(UV_PYTHON),--python $(UV_PYTHON))
@@ -90,6 +90,9 @@ package-verify: package-check coverage ## Run package import and coverage checks
 
 hooks: ## Run all pre-commit hooks (may modify files)
 	$(RUN) pre-commit run --all-files
+
+regenerate-china-heatwave: ## Rebuild the opt-in China 2019 heatwave golden files
+	$(RUN) --group validation python -m validation.china_heatwave_2019.reproduce --write-golden
 
 clean: ## Remove generated files and caches
 	rm -rf build dist .coverage htmlcov .pytest_cache .ruff_cache .ty

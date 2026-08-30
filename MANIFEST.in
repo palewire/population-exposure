@@ -25,3 +25,5 @@ recursive-include scripts *.py
 recursive-include tests *.py
 recursive-include tests/data/unosat_fl20221125cod_basankusu *.geojson *.json *.md *.tif
 recursive-include tests/fixtures/pager_ridgecrest *
+recursive-include tests/fixtures/china_heatwave_2019 *
+recursive-include validation *.md *.py

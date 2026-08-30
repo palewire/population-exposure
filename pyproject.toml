@@ -57,6 +57,11 @@ test = [
     "hypothesis",
     "pytest-timeout",
 ]
+validation = [
+    "cdsapi>=0.7.7",
+    "netcdf4>=1.7",
+    "xarray>=2025.1",
+]
 
 [tool.setuptools.package-dir]
 "" = "src"
@@ -166,7 +171,7 @@ known_first_party = ["population_exposure"]
 python-version = "3.11"
 
 [tool.ty.src]
-include = ["src/population_exposure"]
+include = ["src/population_exposure", "validation"]
 exclude = [
     "tests/**",
     "build/**",
