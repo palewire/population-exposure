@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
 import pytest
+import rasterio
+import xarray as xr
+from rasterio.transform import from_origin
 
 from population_exposure import assign_population
 from population_exposure.populations._http import DownloadResult
@@ -109,7 +113,11 @@ def test_baseline_exposure_uses_each_baseline_years_population() -> None:
     result = _exposure(rows)
 
     assert rows["baseline_heatwave_person_days"].item() == 10.5
-    assert result == pytest.approx((289.5, 100.0, 2.895, 300.0, 10.5))
+    assert result == pytest.approx(
+        (289.5, 100.0, 2.895, 300.0, 10.5),
+        rel=0,
+        abs=1e-12,
+    )
 
 
 @pytest.mark.parametrize(
@@ -226,6 +234,172 @@ def test_invalid_cached_country_raster_is_reextracted(
     assert result.read_bytes() == expected
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Use `@` matmul instead of `\\*` mul operator:PendingDeprecationWarning"
+)
+@pytest.mark.filterwarnings(
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning"
+)
+def test_country_mask_uses_aligned_cell_footprint_majority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Choose country by source-cell area rather than a target-corner sample.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+        monkeypatch: Pytest attribute replacement helper.
+
+    Returns:
+        None.
+
+    Examples:
+        The southeast source pixel disagrees with the three-pixel majority in
+        the first target cell.
+    """
+    source_resolution = 0.25
+    monkeypatch.setattr(
+        reproduction,
+        "COUNTRY_RASTER_RESOLUTION",
+        source_resolution,
+    )
+    monkeypatch.setattr(
+        reproduction,
+        "COUNTRY_CELLS_PER_ASSIGNMENT_SIDE",
+        2,
+    )
+    path = tmp_path / "country.tif"
+    values = np.full((720, 1_440), -32_768, dtype=np.int16)
+    values[359:361, 719:725] = np.array(
+        [[156, 156, 156, 158, 156, 156], [156, 158, 158, 158, 158, 158]],
+        dtype=np.int16,
+    )
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=values.shape[1],
+        height=values.shape[0],
+        count=1,
+        dtype=values.dtype,
+        crs="EPSG:4326",
+        transform=from_origin(-180, 90, source_resolution, source_resolution),
+        nodata=-32_768,
+        compress="lzw",
+    ) as dataset:
+        dataset.write(values, 1)
+
+    result = reproduction._china_mask(
+        path,
+        np.array([0.0]),
+        np.array([0.0, 0.5, 1.0]),
+    )
+
+    assert result.values.tolist() == [[True, False, False]]
+    assert result.source_cells_per_target_side == 2
+    assert result.tied_target_cells == 1
+    assert result.china_tied_target_cells == 1
+
+
+def _write_tiny_era5_source(path: Path, value: float) -> None:
+    """Write one schema-correct, bounded ERA5 test response.
+
+    Args:
+        path: Destination NetCDF path.
+        value: Temperature assigned to every source cell and day.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> # Tests call this after replacing ERA5_AREA with a two-by-two grid.
+    """
+    latitudes, longitudes = reproduction._era5_expected_coordinates()
+    times = pd.date_range("1986-05-01", "1986-09-30", freq="D")
+    values = np.full(
+        (times.size, latitudes.size, longitudes.size),
+        value,
+        dtype=np.float32,
+    )
+    dataset = xr.Dataset(
+        data_vars={
+            "t2m": (
+                ("valid_time", "latitude", "longitude"),
+                values,
+                {"units": "K"},
+            )
+        },
+        coords={
+            "valid_time": times,
+            "latitude": latitudes,
+            "longitude": longitudes,
+        },
+    )
+    dataset.to_netcdf(path, engine="netcdf4")
+
+
+@pytest.mark.filterwarnings(
+    "ignore:numpy.ndarray size changed, may indicate binary incompatibility:RuntimeWarning"
+)
+@pytest.mark.filterwarnings(
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning"
+)
+@pytest.mark.parametrize("corruption", ["truncated", "parseable"])
+def test_invalid_era5_cache_is_validated_and_retrieved_again(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    corruption: str,
+) -> None:
+    """Repair truncated and parseable-but-altered annual ERA5 cache files.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+        monkeypatch: Pytest attribute replacement helper.
+        corruption: Invalid cache shape under test.
+
+    Returns:
+        None.
+
+    Examples:
+        Pytest runs both cases without contacting CDS.
+    """
+    monkeypatch.setattr(reproduction, "ERA5_AREA", (1.0, 0.0, 0.75, 0.25))
+    clean = tmp_path / "clean.nc"
+    _write_tiny_era5_source(clean, 280.0)
+    _, expected_digest = reproduction._read_era5_source(
+        clean,
+        (1986,),
+        expected_digest=None,
+    )
+    cached = tmp_path / "era5_daily_maximum_1986_1986.nc"
+    if corruption == "truncated":
+        cached.write_bytes(b"not a NetCDF response")
+    else:
+        _write_tiny_era5_source(cached, 281.0)
+    retrievals: list[tuple[Path, tuple[int, ...]]] = []
+
+    def fake_retrieve(destination: Path, years: tuple[int, ...]) -> None:
+        retrievals.append((destination, years))
+        shutil.copyfile(clean, destination)
+
+    monkeypatch.setattr(reproduction, "_retrieve_era5_source", fake_retrieve)
+
+    result = reproduction._ensure_era5_source(
+        cached,
+        (1986,),
+        expected_digest=expected_digest,
+    )
+    _, observed_digest = reproduction._read_era5_source(
+        result,
+        (1986,),
+        expected_digest=expected_digest,
+    )
+
+    assert result == cached
+    assert retrievals == [(cached.with_suffix(".nc.partial"), (1986,))]
+    assert observed_digest == expected_digest
+
+
 @pytest.mark.integration
 def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     """Assign golden population by exact coordinates and aggregate exposure.
@@ -287,15 +461,22 @@ def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     ] == [*range(1986, 2006), 2019]
     assert all(extraction["size_bytes"] > 0 for extraction in extractions)
     assert all(len(extraction["sha256"]) == 64 for extraction in extractions)
-    assert method["geography"]["selection"] == "UN M49 country code 156"
-    assert method["geography"]["finite_population_cells"] == len(cells)
+    assert all(
+        len(extraction["normalized_t2m_sha256"]) == 64 for extraction in extractions
+    )
+    geography = method["geography"]
+    assert geography["selection"] == "UN M49 country code 156"
+    assert geography["resolution"] == "30 arc-seconds"
+    assert geography["source_cells_per_target_side"] == 60
+    assert geography["source_cells_per_target_cell"] == 3_600
+    assert geography["tied_target_cells"] == 56
+    assert geography["china_tied_target_cells"] == 26
+    assert geography["mask_cells"] == 3_905
+    assert geography["finite_population_cells"] == len(cells) == 3_595
     assert (
-        abs(
-            method["geography"]["mask_cells"]
-            - method["geography"]["reference_mainland_grid_cells"]
-        )
-        / method["geography"]["reference_mainland_grid_cells"]
-        <= method["geography"]["reference_grid_cell_relative_tolerance"]
+        abs(geography["mask_cells"] - geography["reference_mainland_grid_cells"])
+        / geography["reference_mainland_grid_cells"]
+        <= geography["reference_grid_cell_relative_tolerance"]
     )
     assert hashlib.sha256(cells_bytes).hexdigest() == metadata["fixture"]["sha256"]
     assert len(cells) == metadata["fixture"]["rows"]
@@ -303,10 +484,16 @@ def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     assert cells.notna().all(axis=None)
     assert not cells[["longitude", "latitude"]].duplicated().any()
     assert (cells["population_65_plus_2019"] >= 0).all()
-    assert np.allclose(cells["longitude"] * 2, np.round(cells["longitude"] * 2))
-    assert np.allclose(cells["latitude"] * 2, np.round(cells["latitude"] * 2))
+    assert np.array_equal(
+        cells["longitude"] * 2,
+        np.round(cells["longitude"] * 2),
+    )
+    assert np.array_equal(
+        cells["latitude"] * 2,
+        np.round(cells["latitude"] * 2),
+    )
     assert cells["heatwave_days_2019"].between(0, 153).all()
-    assert np.allclose(
+    assert np.array_equal(
         cells["heatwave_days_2019"],
         np.round(cells["heatwave_days_2019"]),
     )
@@ -314,6 +501,8 @@ def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     assert np.allclose(
         cells["baseline_heatwave_days"] * 20,
         np.round(cells["baseline_heatwave_days"] * 20),
+        rtol=0,
+        atol=1e-9,
     )
     np.testing.assert_allclose(
         cells["additional_heatwave_days"],
@@ -367,6 +556,7 @@ def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     person_days = float(np.sum(additional_person_days, dtype=np.float64))
     assert person_days == pytest.approx(
         target_person_days - baseline_person_days,
+        rel=0,
         abs=1e-6,
     )
     total_population = float(
@@ -381,22 +571,27 @@ def test_china_2019_heatwave_exposure_matches_regenerated_golden() -> None:
     publication = metadata["publication"]
     assert person_days == pytest.approx(
         reproduced["additional_person_days"],
+        rel=0,
         abs=1e-3,
     )
     assert total_population == pytest.approx(
         reproduced["population_65_plus"],
+        rel=0,
         abs=1e-3,
     )
     assert target_person_days == pytest.approx(
         reproduced["heatwave_person_days_2019"],
+        rel=0,
         abs=1e-3,
     )
     assert baseline_person_days == pytest.approx(
         reproduced["mean_annual_heatwave_person_days_1986_2005"],
+        rel=0,
         abs=1e-3,
     )
     assert days_per_person == pytest.approx(
         reproduced["additional_days_per_person"],
+        rel=0,
         abs=1e-12,
     )
     matches_reported_days = (

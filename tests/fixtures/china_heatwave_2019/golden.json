@@ -12,21 +12,22 @@
     ],
     "file": "cells.csv",
     "legal_note": "Compact derived cell values from cited CC BY 4.0 sources; no source raster or NetCDF is redistributed.",
-    "rows": 3637,
-    "sha256": "24f3bde7edeaec89f5bf0436f68533113cd1fbe07ba9e7ed403e6ef3caa2fe5a"
+    "rows": 3595,
+    "sha256": "3ad72f6e3d6e7760effb9ac27e79ece05e52bb0053eb6a15db56594d5cb01bad"
   },
   "method": {
     "baseline_population_handling": "each 1986-2005 heatwave-day grid is multiplied by its same-year population grid before the 20 annual exposure grids are averaged",
     "geography": {
       "caveat": "SEDAC states that this grid represents input-data coverage and is not an official country boundary",
+      "china_tied_target_cells": 26,
       "citation": "CIESIN, Columbia University. Gridded Population of the World, Version 4: National Identifier Grid, Revision 11. NASA SEDAC; 2018.",
       "doi": "10.7927/H4TD9VDP",
-      "file": "gpw-v4-national-identifier-grid-rev11_30_min_tif.zip",
-      "finite_population_cells": 3637,
+      "file": "gpw-v4-national-identifier-grid-rev11_30_sec_tif.zip",
+      "finite_population_cells": 3595,
       "license": "Creative Commons Attribution 4.0 (CC BY 4.0)",
-      "mask_cells": 3899,
-      "publisher_cell_rule": "aggregated pixels use the input country covering the majority of land area",
-      "raster_sha256": "58a52cd474946294f3b98edd6276288b7a73cdb17006ee2b6eb4975c924ea5f6",
+      "mask_cells": 3905,
+      "publisher_cell_rule": "source pixels use the input country covering the majority of land area",
+      "raster_sha256": "71294115eead3a45ac02514f96cc859766fc4113d03437ad0afcb7e7fff9f19f",
       "reference_grid_cell_relative_tolerance": 0.05,
       "reference_mainland_grid_cells": 3829,
       "regional_bounds": [
@@ -35,12 +36,16 @@
         136.0,
         55.0
       ],
-      "resolution": "30 arc-minutes",
+      "resolution": "30 arc-seconds",
       "role": "traceable replacement for the unnamed original China administrative mask",
       "selection": "UN M49 country code 156",
-      "sha256": "b84c0c57918fec1df004c9aedc045ced3cdf9950e17e0272b332f13c3980bcd0",
-      "size_bytes": 95190,
-      "source": "GPWv4 National Identifier Grid, Revision 11"
+      "sha256": "878a19e79569bc81385af20c9b38837e66e3805d0b62d83d59298337a8cf1aa5",
+      "size_bytes": 12548937,
+      "source": "GPWv4 National Identifier Grid, Revision 11",
+      "source_cells_per_target_cell": 3600,
+      "source_cells_per_target_side": 60,
+      "target_cell_rule": "align each centered 0.5-degree footprint with its 60 by 60 native GPW pixels, sum spherical pixel area by country, exclude nodata, and exclude cells without one unique largest country area",
+      "tied_target_cells": 56
     },
     "grid": {
       "coordinate_rule": "select every exact 0.5-degree ERA5 grid point matching the original Chambers grid",
@@ -82,106 +87,127 @@
       "extractions": [
         {
           "file": "era5_daily_maximum_1986_1986.nc",
+          "normalized_t2m_sha256": "5daa233e734ca4379eab8bf52edb05a7dc9db292cfbd055765a224ce90d0eb69",
           "sha256": "1efed27d70895449d9d5f79465539a1b5bd7228997a4f91f09b514cf93a12547",
           "size_bytes": 12976529
         },
         {
           "file": "era5_daily_maximum_1987_1987.nc",
+          "normalized_t2m_sha256": "e7654f1023beccdc2628431b20e28d2ecc40135bc4c20d5acdd7d228952fb06f",
           "sha256": "353fded7ebf330d5e95bb27ed2a33a6b8a4f21bad31de72fc235a9717afe5377",
           "size_bytes": 12015572
         },
         {
           "file": "era5_daily_maximum_1988_1988.nc",
+          "normalized_t2m_sha256": "c12679d2f9698b4886b6e01da69b3228e0e22fd3a570f1f16bc3ba0426c50a91",
           "sha256": "be67bfb4dcfb5b79ca6b3108ebaa04a62c73359c97d3cdb6160777483691c056",
           "size_bytes": 13110016
         },
         {
           "file": "era5_daily_maximum_1989_1989.nc",
+          "normalized_t2m_sha256": "eeec8332443963f56e5c9f83f48f5da47bfb21d21597a3bc2e0e4673e0e4a3bf",
           "sha256": "88d01e29d3a29d4606c52eb20a0fbab962c91c9058dd1a3660c79829744801c4",
           "size_bytes": 12522587
         },
         {
           "file": "era5_daily_maximum_1990_1990.nc",
+          "normalized_t2m_sha256": "8c00befd300b9b19ccdded990d3e2d12656c3fd8f513157856b192f9d3b7495d",
           "sha256": "5c9b5af07efb3446fd032661b2cf0bbfa0aef2ca6690f226cbfeccb86782a289",
           "size_bytes": 12886603
         },
         {
           "file": "era5_daily_maximum_1991_1991.nc",
+          "normalized_t2m_sha256": "eb884d0ddc44cf65823e8bc8bcdc8b657bcc62e2a20caff7eb5d0c3e4c7ee764",
           "sha256": "6d946763d80effec46cf8e006ae3bb24bce54de683a586c199ebc5d9fdb46a8b",
           "size_bytes": 12900085
         },
         {
           "file": "era5_daily_maximum_1992_1992.nc",
+          "normalized_t2m_sha256": "e6726337eeee9d36e99926c6322975fc84dab6c53fe36dfa59033c9425b72360",
           "sha256": "3cc2ed4fb12c9ba54a517b0dddd311658de7494ddfe7340cb35fe11a709798f5",
           "size_bytes": 12927956
         },
         {
           "file": "era5_daily_maximum_1993_1993.nc",
+          "normalized_t2m_sha256": "bd3fe6f20c1e1af56b9602b2d13d4968cbf13d0558e95a06e26a0f7c03ba10bd",
           "sha256": "7b04f8f91da3b5db0a27d879dc5050583e172213cb7aca1c7e0952d11446f560",
           "size_bytes": 12001016
         },
         {
           "file": "era5_daily_maximum_1994_1994.nc",
+          "normalized_t2m_sha256": "0ee70beaa470f164cc6a2bb8cb1b5bc526b52a7e357e0aaeca61916e96dd6b5a",
           "sha256": "90a298247437fa63df0f3029d5fe8e9e673e00298b540198d8069f17497e9fca",
           "size_bytes": 12345606
         },
         {
           "file": "era5_daily_maximum_1995_1995.nc",
+          "normalized_t2m_sha256": "5b367018b7b03f73b564b415871289e1c781cdb81d283fc726e42e68b7a7ee0c",
           "sha256": "a9c31ab7a5b84e2f0dd13de43e6b1cf2febc3800f406f840a8e012bdacd17e2d",
           "size_bytes": 13245963
         },
         {
           "file": "era5_daily_maximum_1996_1996.nc",
+          "normalized_t2m_sha256": "49ee87a256ba4a55894ddffb2d219f6a4641d9345e20179096cc40125a09e16f",
           "sha256": "8054ea974bba617f930982b9b601c68b4b4caf08997002e9d17fcce9f68380c1",
           "size_bytes": 13254761
         },
         {
           "file": "era5_daily_maximum_1997_1997.nc",
+          "normalized_t2m_sha256": "70c62013639cec979505fc3bb4c039ed3642adfd336d0d5834ddec7e91214b2c",
           "sha256": "1fa164292b0bd7abd60dcb0fd5e4ddd2ff20103e85f67fc514078517fa27b987",
           "size_bytes": 12707479
         },
         {
           "file": "era5_daily_maximum_1998_1998.nc",
+          "normalized_t2m_sha256": "92e3e68a053103e4aea487b38f8fcb90e5d5fa81095c8e2fa2b61fc1031aaf79",
           "sha256": "f9e066c9299738401bc3f28187df51910c2d8dfae1e3c5d2c0e7136344b65372",
           "size_bytes": 11999574
         },
         {
           "file": "era5_daily_maximum_1999_1999.nc",
+          "normalized_t2m_sha256": "1185988b2d2c38f1f3b7cade1d6c16734143bce3a22e94b712b470a732bc8f81",
           "sha256": "3124267ea712924246e549ced075f5fc475a6489cadb9da72400f9225086cc9c",
           "size_bytes": 12986902
         },
         {
           "file": "era5_daily_maximum_2000_2000.nc",
+          "normalized_t2m_sha256": "3298fb30fbd727b0c3b9e90c741ada130be3874e22828ef3e320f771a7af4044",
           "sha256": "665ba32ae667e5905c66afaeb41f814aff43a09ebf55f2672190dfb76f582ad7",
           "size_bytes": 12491509
         },
         {
           "file": "era5_daily_maximum_2001_2001.nc",
+          "normalized_t2m_sha256": "9d0b1c27d3c8a7fefdd64371e940be98f861008df429b6aa8d9c57a19560862c",
           "sha256": "914ac5dde3b7778377f05907e568b042ee5e56538e970fcfa461008303676bca",
           "size_bytes": 12964805
         },
         {
           "file": "era5_daily_maximum_2002_2002.nc",
+          "normalized_t2m_sha256": "6f64643e82a10050ff138c02a880c73873b4293dea4e96e411c32e71cc36cf4b",
           "sha256": "245d6cf0306482ca8e9dc46fb3a8586762a9e2e4ed08c6bd80131df9c70bc2ae",
           "size_bytes": 13259146
         },
         {
           "file": "era5_daily_maximum_2003_2003.nc",
+          "normalized_t2m_sha256": "90b97be2b8429d54ca4bf011848c47fbbd59582d292cb971b15d2fc44ca748df",
           "sha256": "b7931f2d6d27bc9fcba271a7ffafdfba00910f3cfbba792f8655ac9f4ad2f6e0",
           "size_bytes": 12011259
         },
         {
           "file": "era5_daily_maximum_2004_2004.nc",
+          "normalized_t2m_sha256": "131e3740568d1244f28741ce6071e22481bc3a37608e105bef01a758044c0290",
           "sha256": "8671464dd6254835234a5d762e1b4e77c6c404891ab07dc9a9798abdd78b2f5c",
           "size_bytes": 12873137
         },
         {
           "file": "era5_daily_maximum_2005_2005.nc",
+          "normalized_t2m_sha256": "f8e21bb2c696c4073a256833599cd160d34914be2489d145d17e026ab688e3e0",
           "sha256": "593e0ef96fe2814dc5653b354ceae1d190e186323052eb2255c174897032dbd0",
           "size_bytes": 12960680
         },
         {
           "file": "era5_daily_maximum_2019_2019.nc",
+          "normalized_t2m_sha256": "35354a3d2e99748485ebcb208e258be875cafe02cc432ef01f7bdc3fd9a384b5",
           "sha256": "6446e3676715b08e725413e1127410c08ba58ca7e47cdd5eecd7fa8982d2615b",
           "size_bytes": 13233554
         }
@@ -206,11 +232,11 @@
       ],
       "comparison": "strictly greater than",
       "inclusive_comparison_sensitivity": {
-        "additional_days_per_person": 9.614268140352275,
-        "additional_person_days": 1687238841.0072546,
-        "additional_person_days_difference_from_strict": -166076.61665034294,
+        "additional_days_per_person": 9.61363185997182,
+        "additional_person_days": 1699610348.5438693,
+        "additional_person_days_difference_from_strict": -166073.54473423958,
         "comparison": "greater than or equal to",
-        "heatwave_person_days_2019": 2272964213.1833806
+        "heatwave_person_days_2019": 2289353680.85104
       },
       "percentile": 92.5,
       "quantile_method": "linear",
@@ -239,24 +265,24 @@
     "status": "outside reported additional exposure tolerance"
   },
   "reproduction": {
-    "additional_days_per_person": 9.61521448243824,
-    "additional_person_days": 1687404917.623905,
-    "heatwave_person_days_2019": 2272963932.9428225,
-    "mean_annual_heatwave_person_days_1986_2005": 585559015.3189176,
-    "population_65_plus": 175493216.5793987,
-    "published_difference_person_days": -512595082.37609506
+    "additional_days_per_person": 9.614571234059607,
+    "additional_person_days": 1699776422.0886035,
+    "heatwave_person_days_2019": 2289353400.6104817,
+    "mean_annual_heatwave_person_days_1986_2005": 589576978.5218786,
+    "population_65_plus": 176791703.00045702,
+    "published_difference_person_days": -500223577.9113965
   },
   "series_diagnostics": {
     "year_2000": {
-      "current_population_weighted_day_anomaly_person_days": 132125363.25556502,
-      "method_additional_person_days": 187133550.37708092,
-      "method_difference_from_reported": 115333550.37708092,
+      "current_population_weighted_day_anomaly_person_days": 138630850.06399924,
+      "method_additional_person_days": 193798871.0333892,
+      "method_difference_from_reported": 121998871.03338921,
       "method_within_reported_tolerance": false,
       "reported_additional_person_days": 71800000.0,
       "reported_rounding_tolerance": 50000.0
     },
     "year_2019": {
-      "current_population_weighted_day_anomaly_person_days": 1113139018.6495414
+      "current_population_weighted_day_anomaly_person_days": 1122515498.6778247
     }
   }
 }

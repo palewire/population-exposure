@@ -52,10 +52,12 @@ dev = [
 ]
 test = [
     "defusedxml>=0.7.1",
+    "netcdf4>=1.7",
     "pytest",
     "pytest-cov",
     "hypothesis",
     "pytest-timeout",
+    "xarray>=2025.1",
 ]
 validation = [
     "cdsapi>=0.7.7",

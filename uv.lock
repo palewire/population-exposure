@@ -1317,9 +1317,11 @@ dev = [
 test = [
     { name = "defusedxml" },
     { name = "hypothesis" },
+    { name = "netcdf4" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
+    { name = "xarray" },
 ]
 validation = [
     { name = "cdsapi" },
@@ -1355,9 +1357,11 @@ dev = [
 test = [
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "hypothesis" },
+    { name = "netcdf4", specifier = ">=1.7" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
+    { name = "xarray", specifier = ">=2025.1" },
 ]
 validation = [
     { name = "cdsapi", specifier = ">=0.7.7" },

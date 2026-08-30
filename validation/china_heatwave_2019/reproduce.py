@@ -8,6 +8,8 @@ import json
 import os
 import shutil
 import sys
+import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 from zipfile import ZipFile
@@ -16,6 +18,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from platformdirs import user_cache_path
+from rasterio.windows import from_bounds
 
 from population_exposure import assign_population
 from population_exposure.populations._http import download_file, sha256_file
@@ -52,29 +55,65 @@ POPULATION_SIZE = 1_660_395_967
 POPULATION_MD5 = "5f24e8b2088ea0127f495ea364725df5"  # pragma: allowlist secret
 POPULATION_SHA256 = "baa951326f2975d5d6dabfb2555ef6fcc86347137766c56f739344990fb3ad07"  # pragma: allowlist secret
 
-COUNTRY_ARCHIVE_FILENAME = "gpw-v4-national-identifier-grid-rev11_30_min_tif.zip"
-COUNTRY_RASTER_FILENAME = "gpw_v4_national_identifier_grid_rev11_30_min.tif"
+COUNTRY_ARCHIVE_FILENAME = "gpw-v4-national-identifier-grid-rev11_30_sec_tif.zip"
+COUNTRY_RASTER_FILENAME = "gpw_v4_national_identifier_grid_rev11_30_sec.tif"
 COUNTRY_URL = (
     "https://data.earthdata.nasa.gov/nasa-earth/human-dimensions/"
     "sedac-root/downloads/data/gpw-v4/gpw-v4-national-identifier-grid-rev11/"
     f"{COUNTRY_ARCHIVE_FILENAME}"
 )
-COUNTRY_ARCHIVE_SIZE = 95_190
-COUNTRY_ARCHIVE_SHA256 = "b84c0c57918fec1df004c9aedc045ced3cdf9950e17e0272b332f13c3980bcd0"  # pragma: allowlist secret
-COUNTRY_RASTER_SIZE = 37_453
-COUNTRY_RASTER_SHA256 = "58a52cd474946294f3b98edd6276288b7a73cdb17006ee2b6eb4975c924ea5f6"  # pragma: allowlist secret
+COUNTRY_ARCHIVE_SIZE = 12_548_937
+COUNTRY_ARCHIVE_SHA256 = "878a19e79569bc81385af20c9b38837e66e3805d0b62d83d59298337a8cf1aa5"  # pragma: allowlist secret
+COUNTRY_RASTER_SIZE = 38_236_733
+COUNTRY_RASTER_SHA256 = "71294115eead3a45ac02514f96cc859766fc4113d03437ad0afcb7e7fff9f19f"  # pragma: allowlist secret
+COUNTRY_RASTER_RESOLUTION = 1 / 120
+COUNTRY_RASTER_NODATA = -32_768
+ASSIGNMENT_GRID_RESOLUTION = 0.5
+COUNTRY_CELLS_PER_ASSIGNMENT_SIDE = 60
 
 ERA5_DATASET = "derived-era5-single-levels-daily-statistics"
 ERA5_VARIABLE = "t2m"
 ERA5_AREA = (55, 72, 17, 136)
 ERA5_YEAR_BATCHES = tuple((year,) for year in (*BASELINE_YEARS, TARGET_YEAR))
 ERA5_MAX_BATCH_BYTES = 100_000_000
+ERA5_SOURCE_GRID_RESOLUTION = 0.25
+ERA5_TEMPERATURE_RANGE_K = (150.0, 400.0)
 
 GOLDEN_DIRECTORY = (
     Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "china_heatwave_2019"
 )
 GOLDEN_CELLS = GOLDEN_DIRECTORY / "cells.csv"
 GOLDEN_METADATA = GOLDEN_DIRECTORY / "golden.json"
+
+
+@dataclass(frozen=True, slots=True)
+class CountryMaskAssignment:
+    """Country assignment derived from aligned source-cell footprints.
+
+    Args:
+        values: Boolean assignment to mainland China for each target cell.
+        source_cells_per_target_side: Native GPW cells along each target-cell side.
+        tied_target_cells: Non-empty target cells excluded for tied country areas.
+        china_tied_target_cells: Excluded ties where China shared the largest area.
+
+    Returns:
+        An immutable description of the aligned majority-area assignment.
+
+    Examples:
+        >>> assignment = CountryMaskAssignment(
+        ...     values=np.array([[True]]),
+        ...     source_cells_per_target_side=60,
+        ...     tied_target_cells=0,
+        ...     china_tied_target_cells=0,
+        ... )
+        >>> assignment.values.item()
+        True
+    """
+
+    values: NDArray[np.bool_]
+    source_cells_per_target_side: int
+    tied_target_cells: int
+    china_tied_target_cells: int
 
 
 def _md5(path: Path) -> str:
@@ -264,45 +303,170 @@ def _china_mask(
     country_raster: Path,
     latitudes: NDArray[np.float64],
     longitudes: NDArray[np.float64],
-) -> NDArray[np.bool_]:
-    """Identify the report's national China cells with the GPW country grid.
+) -> CountryMaskAssignment:
+    """Assign each target-cell footprint to its majority-area GPW country.
 
     Args:
-        country_raster: GPWv4 Revision 11 30-minute national identifier raster.
-        latitudes: Population-grid latitudes.
-        longitudes: Population-grid longitudes in zero-to-360 notation.
+        country_raster: Native 30-arc-second GPWv4 national identifier raster.
+        latitudes: Descending 0.5-degree target-cell center latitudes.
+        longitudes: Ascending 0.5-degree target-cell center longitudes.
 
     Returns:
-        A boolean grid selecting UN M49 code 156, mainland China.
+        Mainland-China assignments and footprint-alignment diagnostics.
 
     Raises:
-        ValueError: If no cells match the expected China code.
+        ValueError: If either grid has unexpected geometry or no cells are
+            assigned to China.
 
     Examples:
         The national mask intentionally excludes separately coded Hong Kong
         (344) and Taiwan (158), matching the published national denominator.
     """
-    longitude_grid, latitude_grid = np.meshgrid(longitudes, latitudes)
-    signed_longitudes = np.where(
-        longitude_grid > 180,
-        longitude_grid - 360,
-        longitude_grid,
-    )
-    points = zip(
-        signed_longitudes.ravel(),
-        latitude_grid.ravel(),
-        strict=True,
-    )
+    if (
+        latitudes.ndim != 1
+        or longitudes.ndim != 1
+        or latitudes.size == 0
+        or longitudes.size == 0
+    ):
+        raise ValueError("Target country coordinates must be non-empty 1D arrays.")
+    if not np.allclose(
+        np.diff(latitudes),
+        -ASSIGNMENT_GRID_RESOLUTION,
+        rtol=0,
+        atol=1e-12,
+    ) or not np.allclose(
+        np.diff(longitudes),
+        ASSIGNMENT_GRID_RESOLUTION,
+        rtol=0,
+        atol=1e-12,
+    ):
+        raise ValueError(
+            "Target country coordinates must use a regular 0.5-degree grid."
+        )
+
+    left = float(longitudes[0] - ASSIGNMENT_GRID_RESOLUTION / 2)
+    right = float(longitudes[-1] + ASSIGNMENT_GRID_RESOLUTION / 2)
+    top = float(latitudes[0] + ASSIGNMENT_GRID_RESOLUTION / 2)
+    bottom = float(latitudes[-1] - ASSIGNMENT_GRID_RESOLUTION / 2)
     with rasterio.open(country_raster) as dataset:
-        identifiers = np.fromiter(
-            (sample[0] for sample in dataset.sample(points)),
-            dtype=np.int16,
-            count=longitude_grid.size,
-        ).reshape(longitude_grid.shape)
-    mask = identifiers == CHINA_UN_M49
+        expected_transform = rasterio.Affine(
+            COUNTRY_RASTER_RESOLUTION,
+            0,
+            -180,
+            0,
+            -COUNTRY_RASTER_RESOLUTION,
+            90,
+        )
+        expected_shape = (
+            round(180 / COUNTRY_RASTER_RESOLUTION),
+            round(360 / COUNTRY_RASTER_RESOLUTION),
+        )
+        if (
+            dataset.shape != expected_shape
+            or dataset.crs != rasterio.CRS.from_epsg(4326)
+            or not np.allclose(
+                tuple(dataset.transform)[:6],
+                tuple(expected_transform)[:6],
+                rtol=0,
+                atol=1e-12,
+            )
+            or dataset.nodata != COUNTRY_RASTER_NODATA
+        ):
+            raise ValueError(
+                "GPW national identifiers must use the published global "
+                "30-arc-second grid."
+            )
+        source_cells_per_side = round(
+            ASSIGNMENT_GRID_RESOLUTION / COUNTRY_RASTER_RESOLUTION
+        )
+        if source_cells_per_side != COUNTRY_CELLS_PER_ASSIGNMENT_SIDE:
+            raise ValueError("GPW and target-cell resolutions do not align exactly.")
+        raw_window = from_bounds(
+            left,
+            bottom,
+            right,
+            top,
+            dataset.transform,
+        )
+        window = raw_window.round_offsets().round_lengths()
+        if not np.allclose(
+            (
+                raw_window.col_off,
+                raw_window.row_off,
+                raw_window.width,
+                raw_window.height,
+            ),
+            (window.col_off, window.row_off, window.width, window.height),
+            rtol=0,
+            atol=1e-9,
+        ) or not np.allclose(
+            dataset.window_bounds(window),
+            (left, bottom, right, top),
+            rtol=0,
+            atol=1e-12,
+        ):
+            raise ValueError("Target cell footprints do not align with GPW pixels.")
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Setting the shape on a NumPy array has been deprecated",
+                category=DeprecationWarning,
+            )
+            identifiers = dataset.read(1, window=window)
+        expected_shape = (
+            latitudes.size * source_cells_per_side,
+            longitudes.size * source_cells_per_side,
+        )
+        if identifiers.shape != expected_shape:
+            raise ValueError(
+                f"Aligned GPW window has shape {identifiers.shape}; "
+                f"expected {expected_shape}."
+            )
+        row_offsets = int(window.row_off) + np.arange(identifiers.shape[0])
+        source_tops = dataset.transform.f + row_offsets * dataset.transform.e
+        source_bottoms = source_tops + dataset.transform.e
+
+    row_areas = np.sin(np.deg2rad(source_tops)) - np.sin(np.deg2rad(source_bottoms))
+    blocks = identifiers.reshape(
+        latitudes.size,
+        source_cells_per_side,
+        longitudes.size,
+        source_cells_per_side,
+    )
+    block_row_areas = row_areas.reshape(latitudes.size, source_cells_per_side)
+    country_codes = np.unique(identifiers)
+    country_codes = country_codes[country_codes != COUNTRY_RASTER_NODATA]
+    if country_codes.size == 0:
+        raise ValueError("Aligned GPW country window contains no country identifiers.")
+    country_areas = np.stack(
+        [
+            np.einsum(
+                "abcd,ab->ac",
+                blocks == country_code,
+                block_row_areas,
+                dtype=np.float64,
+                optimize=True,
+            )
+            for country_code in country_codes
+        ]
+    )
+    maximum_area = np.max(country_areas, axis=0)
+    tied = (np.sum(country_areas == maximum_area, axis=0) > 1) & (maximum_area > 0)
+    tied_count = int(np.count_nonzero(tied))
+    china_indexes = np.flatnonzero(country_codes == CHINA_UN_M49)
+    if china_indexes.size != 1:
+        raise ValueError("Aligned GPW country window must contain China code 156.")
+    china_area = country_areas[int(china_indexes[0])]
+    china_tied = tied & (china_area == maximum_area)
+    mask = (china_area == maximum_area) & ~tied & (maximum_area > 0)
     if not mask.any():
         raise ValueError("The GPW country grid contains no UN M49 156 cells.")
-    return mask
+    return CountryMaskAssignment(
+        values=mask,
+        source_cells_per_target_side=source_cells_per_side,
+        tied_target_cells=tied_count,
+        china_tied_target_cells=int(np.count_nonzero(china_tied)),
+    )
 
 
 def _extract_country_raster(archive_path: Path, destination: Path) -> Path:
@@ -360,25 +524,266 @@ def _extract_country_raster(archive_path: Path, destination: Path) -> Path:
     return destination
 
 
+def _expected_era5_digests() -> dict[str, str]:
+    """Read normalized annual ERA5 digests from the committed golden metadata.
+
+    Args:
+        None.
+
+    Returns:
+        Expected normalized temperature digest keyed by cached filename.
+
+    Raises:
+        ValueError: If a recorded digest has an invalid shape.
+
+    Examples:
+        The first regeneration that introduces normalized digests returns an
+        empty mapping and writes the manifest for future cache checks.
+    """
+    if not GOLDEN_METADATA.is_file():
+        return {}
+    payload = json.loads(GOLDEN_METADATA.read_text(encoding="utf-8"))
+    extractions = (
+        payload.get("method", {})
+        .get("temperature", {})
+        .get(
+            "extractions",
+            [],
+        )
+    )
+    if not isinstance(extractions, list):
+        raise ValueError("Golden ERA5 extractions metadata must be a list.")
+    expected: dict[str, str] = {}
+    for extraction in extractions:
+        if not isinstance(extraction, dict):
+            raise ValueError("Golden ERA5 extraction entries must be dictionaries.")
+        filename = extraction.get("file")
+        digest = extraction.get("normalized_t2m_sha256")
+        if digest is None:
+            continue
+        if (
+            not isinstance(filename, str)
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError("Golden ERA5 normalized digest metadata is invalid.")
+        expected[filename] = digest
+    return expected
+
+
+def _era5_expected_coordinates() -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return the exact source-grid coordinates requested from CDS.
+
+    Args:
+        None.
+
+    Returns:
+        Descending latitude and ascending longitude arrays.
+
+    Examples:
+        >>> latitude, longitude = _era5_expected_coordinates()
+        >>> (latitude[0], longitude[0])
+        (np.float64(55.0), np.float64(72.0))
+    """
+    north, west, south, east = ERA5_AREA
+    latitude_count = round((north - south) / ERA5_SOURCE_GRID_RESOLUTION) + 1
+    longitude_count = round((east - west) / ERA5_SOURCE_GRID_RESOLUTION) + 1
+    return (
+        np.linspace(north, south, latitude_count, dtype=np.float64),
+        np.linspace(west, east, longitude_count, dtype=np.float64),
+    )
+
+
+def _read_era5_source(
+    source_path: Path,
+    years: tuple[int, ...],
+    *,
+    expected_digest: str | None,
+) -> tuple[dict[int, NDArray[np.float32]], str]:
+    """Validate and read one official ERA5 daily-statistics NetCDF response.
+
+    Args:
+        source_path: Cached annual CDS response.
+        years: Exact years expected in the response.
+        expected_digest: Optional committed normalized-value digest.
+
+    Returns:
+        Daily maximum arrays keyed by year and their normalized digest.
+
+    Raises:
+        ValueError: If schema, coordinates, dates, values, or digest differ.
+        OSError: If the NetCDF response cannot be read.
+
+    Examples:
+        Regeneration uses this before trusting either cached or new bytes.
+    """
+    import xarray as xr  # deptry: ignore[DEP004]
+
+    expected_latitudes, expected_longitudes = _era5_expected_coordinates()
+    expected_times = np.concatenate(
+        [
+            pd.date_range(
+                f"{year}-05-01",
+                f"{year}-09-30",
+                freq="D",
+            ).to_numpy()
+            for year in years
+        ]
+    )
+    with xr.open_dataset(source_path, engine="netcdf4") as dataset:
+        if tuple(dataset.data_vars) != (ERA5_VARIABLE,):
+            raise ValueError(
+                f"ERA5 source must contain only {ERA5_VARIABLE!r} as a data variable."
+            )
+        temperature = dataset[ERA5_VARIABLE]
+        if temperature.dims != ("valid_time", "latitude", "longitude"):
+            raise ValueError("ERA5 temperature dimensions or order are invalid.")
+        if temperature.dtype != np.dtype(np.float32):
+            raise ValueError("ERA5 daily maximum temperature must use float32.")
+        if temperature.attrs.get("units") != "K":
+            raise ValueError("ERA5 daily maximum temperature must use kelvin.")
+        if not np.array_equal(dataset.latitude.values, expected_latitudes):
+            raise ValueError("ERA5 source latitude coordinates are invalid.")
+        if not np.array_equal(dataset.longitude.values, expected_longitudes):
+            raise ValueError("ERA5 source longitude coordinates are invalid.")
+        if not np.array_equal(dataset.valid_time.values, expected_times):
+            raise ValueError("ERA5 source must contain each requested warm-season day.")
+        values = np.asarray(temperature.values, dtype=np.float32)
+
+    expected_shape = (
+        len(years) * 153,
+        expected_latitudes.size,
+        expected_longitudes.size,
+    )
+    if values.shape != expected_shape:
+        raise ValueError(
+            f"ERA5 source has shape {values.shape}; expected {expected_shape}."
+        )
+    minimum, maximum = ERA5_TEMPERATURE_RANGE_K
+    if (
+        not np.isfinite(values).all()
+        or np.any(values < minimum)
+        or np.any(values > maximum)
+    ):
+        raise ValueError(
+            f"ERA5 temperatures must be finite and within {minimum}-{maximum} K."
+        )
+    normalized_digest = _array_digest([values])
+    if expected_digest is not None and normalized_digest != expected_digest:
+        raise ValueError("ERA5 normalized temperature digest does not match golden.")
+    values_by_year = {
+        year: values[index * 153 : (index + 1) * 153]
+        for index, year in enumerate(years)
+    }
+    return values_by_year, normalized_digest
+
+
+def _retrieve_era5_source(destination: Path, years: tuple[int, ...]) -> None:
+    """Retrieve one bounded ERA5 daily-statistics response from CDS.
+
+    Args:
+        destination: Partial NetCDF path written by the CDS client.
+        years: Exact years to request.
+
+    Returns:
+        None.
+
+    Examples:
+        Tests replace this network boundary with a local fixture writer.
+    """
+    import cdsapi  # deptry: ignore[DEP004]
+
+    request = {
+        "product_type": "reanalysis",
+        "variable": ["2m_temperature"],
+        "year": [str(year) for year in years],
+        "month": [f"{month:02d}" for month in WARM_SEASON_MONTHS],
+        "day": [f"{day:02d}" for day in range(1, 32)],
+        "daily_statistic": "daily_maximum",
+        "time_zone": "utc+00:00",
+        "frequency": "1_hourly",
+        "area": list(ERA5_AREA),
+        "data_format": "netcdf",
+    }
+    cdsapi.Client().retrieve(ERA5_DATASET, request, str(destination))
+
+
+def _ensure_era5_source(
+    destination: Path,
+    years: tuple[int, ...],
+    *,
+    expected_digest: str | None,
+) -> Path:
+    """Return one validated cache file, repairing invalid owned bytes.
+
+    Args:
+        destination: Final annual NetCDF cache path.
+        years: Exact years expected in the response.
+        expected_digest: Optional committed normalized-value digest.
+
+    Returns:
+        The validated final cache path.
+
+    Raises:
+        ValueError: If a fresh CDS response fails size or content validation.
+        OSError: If retrieval or local file operations fail.
+
+    Examples:
+        Parseable cache corruption is removed before one fresh retrieval.
+    """
+    if destination.is_file():
+        try:
+            _read_era5_source(
+                destination,
+                years,
+                expected_digest=expected_digest,
+            )
+        except (OSError, ValueError):
+            destination.unlink()
+        else:
+            return destination
+
+    partial = destination.with_suffix(".nc.partial")
+    partial.unlink(missing_ok=True)
+    _retrieve_era5_source(partial, years)
+    if not partial.is_file() or partial.stat().st_size == 0:
+        raise ValueError("CDS did not create a non-empty ERA5 response.")
+    if partial.stat().st_size > ERA5_MAX_BATCH_BYTES:
+        partial.unlink()
+        raise ValueError(f"CDS response exceeded {ERA5_MAX_BATCH_BYTES} bytes.")
+    try:
+        _read_era5_source(
+            partial,
+            years,
+            expected_digest=expected_digest,
+        )
+    except (OSError, ValueError):
+        partial.unlink()
+        raise
+    partial.replace(destination)
+    return destination
+
+
 def _era5_sources(cache_directory: Path) -> tuple[Path, ...]:
-    """Return bounded official ERA5 daily-statistics extracts.
+    """Return validated bounded official ERA5 daily-statistics extracts.
 
     Args:
         cache_directory: Directory for reusable NetCDF responses.
 
     Returns:
-        One cached NetCDF path for each declared year batch.
+        One validated cache path for each declared year batch.
 
     Raises:
-        ValueError: If CDS does not create a non-empty NetCDF response.
-        OSError: If a CDS request or local file operation fails.
+        ValueError: If a cached and refreshed response both fail validation.
+        OSError: If CDS retrieval or local file operations fail.
 
     Examples:
-        A configured ``~/.cdsapirc`` is required only for missing batches.
+        A configured ``~/.cdsapirc`` is required only for missing or invalid
+        batches.
     """
-    import cdsapi  # deptry: ignore[DEP004]
-
     cache_directory.mkdir(parents=True, exist_ok=True)
+    expected_digests = _expected_era5_digests()
     paths: list[Path] = []
     for years in ERA5_YEAR_BATCHES:
         first_year = years[0]
@@ -386,29 +791,13 @@ def _era5_sources(cache_directory: Path) -> tuple[Path, ...]:
         destination = cache_directory / (
             f"era5_daily_maximum_{first_year}_{last_year}.nc"
         )
-        if not destination.is_file() or destination.stat().st_size == 0:
-            partial = destination.with_suffix(".nc.partial")
-            partial.unlink(missing_ok=True)
-            request = {
-                "product_type": "reanalysis",
-                "variable": ["2m_temperature"],
-                "year": [str(year) for year in years],
-                "month": [f"{month:02d}" for month in WARM_SEASON_MONTHS],
-                "day": [f"{day:02d}" for day in range(1, 32)],
-                "daily_statistic": "daily_maximum",
-                "time_zone": "utc+00:00",
-                "frequency": "1_hourly",
-                "area": list(ERA5_AREA),
-                "data_format": "netcdf",
-            }
-            cdsapi.Client().retrieve(ERA5_DATASET, request, str(partial))
-            if not partial.is_file() or partial.stat().st_size == 0:
-                raise ValueError("CDS did not create a non-empty ERA5 response.")
-            if partial.stat().st_size > ERA5_MAX_BATCH_BYTES:
-                partial.unlink()
-                raise ValueError(f"CDS response exceeded {ERA5_MAX_BATCH_BYTES} bytes.")
-            partial.replace(destination)
-        paths.append(destination)
+        paths.append(
+            _ensure_era5_source(
+                destination,
+                years,
+                expected_digest=expected_digests.get(destination.name),
+            )
+        )
     return tuple(paths)
 
 
@@ -416,8 +805,12 @@ def _era5_arrays(
     source_paths: Sequence[Path],
     latitudes: NDArray[np.float64],
     longitudes: NDArray[np.float64],
-) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-    """Read baseline and target daily maxima from official ERA5 extracts.
+) -> tuple[
+    NDArray[np.float32],
+    NDArray[np.float32],
+    dict[str, str],
+]:
+    """Read baseline and target daily maxima from validated ERA5 extracts.
 
     Args:
         source_paths: Bounded CDS daily-statistics NetCDF responses.
@@ -425,61 +818,43 @@ def _era5_arrays(
         longitudes: Exact 0.5-degree target longitudes.
 
     Returns:
-        Baseline values ordered by year, day, latitude, and longitude, followed
-        by 2019 values ordered by day, latitude, and longitude.
+        Baseline values, 2019 values, and normalized annual digests.
 
     Raises:
-        ValueError: If source metadata, dates, shapes, or values are unexpected.
+        ValueError: If required years or target coordinates are missing.
+        OSError: If a source cannot be read.
 
     Examples:
         Every returned year has the report's 153-day warm season.
     """
-    import xarray as xr  # deptry: ignore[DEP004]
-
     values_by_year: dict[int, NDArray[np.float32]] = {}
-    for source_path in source_paths:
-        with xr.open_dataset(source_path, engine="netcdf4") as dataset:
-            if ERA5_VARIABLE not in dataset:
-                raise ValueError(f"ERA5 source must contain {ERA5_VARIABLE!r}.")
-            temperature = dataset[ERA5_VARIABLE]
-            if temperature.attrs.get("units") != "K":
-                raise ValueError("ERA5 daily maximum temperature must use kelvin.")
-            selected = (
-                temperature.sel(latitude=latitudes, longitude=longitudes)
-                .transpose("valid_time", "latitude", "longitude")
-                .load()
-            )
-            available_years = np.unique(selected.valid_time.dt.year.values)
-            for year_value in available_years:
-                year = int(year_value)
-                year_data = selected.sel(valid_time=str(year))
-                expected_times = pd.date_range(
-                    f"{year}-05-01",
-                    f"{year}-09-30",
-                    freq="D",
-                ).to_numpy()
-                if not np.array_equal(year_data.valid_time.values, expected_times):
-                    raise ValueError(
-                        f"ERA5 {year} must contain each May-September UTC day."
-                    )
-                values_by_year[year] = np.asarray(
-                    year_data.values,
-                    dtype=np.float32,
-                )
+    normalized_digests: dict[str, str] = {}
+    expected_digests = _expected_era5_digests()
+    for source_path, years in zip(source_paths, ERA5_YEAR_BATCHES, strict=True):
+        source_values, normalized_digest = _read_era5_source(
+            source_path,
+            years,
+            expected_digest=expected_digests.get(source_path.name),
+        )
+        values_by_year.update(source_values)
+        normalized_digests[source_path.name] = normalized_digest
 
     required_years = (*BASELINE_YEARS, TARGET_YEAR)
     if tuple(sorted(values_by_year)) != required_years:
         raise ValueError("ERA5 extracts do not contain exactly the required years.")
-    expected_shape = (153, latitudes.size, longitudes.size)
-    for year, values in values_by_year.items():
-        if values.shape != expected_shape:
-            raise ValueError(
-                f"ERA5 {year} has shape {values.shape}; expected {expected_shape}."
-            )
-        if not np.isfinite(values).all():
-            raise ValueError(f"ERA5 {year} contains non-finite values.")
-    baseline = np.stack([values_by_year[year] for year in BASELINE_YEARS])
-    return baseline, values_by_year[TARGET_YEAR]
+    expected_latitudes, expected_longitudes = _era5_expected_coordinates()
+    latitude_indexes = np.searchsorted(-expected_latitudes, -latitudes)
+    longitude_indexes = np.searchsorted(expected_longitudes, longitudes)
+    if not np.array_equal(expected_latitudes[latitude_indexes], latitudes):
+        raise ValueError("Target latitudes do not align with ERA5 coordinates.")
+    if not np.array_equal(expected_longitudes[longitude_indexes], longitudes):
+        raise ValueError("Target longitudes do not align with ERA5 coordinates.")
+    selected_by_year = {
+        year: values[:, latitude_indexes][:, :, longitude_indexes]
+        for year, values in values_by_year.items()
+    }
+    baseline = np.stack([selected_by_year[year] for year in BASELINE_YEARS])
+    return baseline, selected_by_year[TARGET_YEAR], normalized_digests
 
 
 def _array_digest(arrays: Sequence[NDArray[np.floating]]) -> str:
@@ -859,7 +1234,7 @@ def _metadata(
     temperature_sources: Sequence[dict[str, object]],
     inclusive_threshold_sensitivity: dict[str, float | str],
     series_diagnostics: dict[str, object],
-    mask_cells: int,
+    country_assignment: CountryMaskAssignment,
     cells_sha256: str,
     person_days: float,
     total_population: float,
@@ -876,7 +1251,7 @@ def _metadata(
         inclusive_threshold_sensitivity: Result under the appendix table's
             conflicting inclusive comparison.
         series_diagnostics: Cross-checks on the paper's reported time series.
-        mask_cells: GPW country-code cells inside the bounded extraction.
+        country_assignment: Aligned majority-area China assignment.
         cells_sha256: Digest of the serialized CSV.
         person_days: Reproduced additional heatwave person-days.
         total_population: Selected 2019 population aged 65+.
@@ -1000,11 +1375,17 @@ def _metadata(
                 "size_bytes": COUNTRY_ARCHIVE_SIZE,
                 "sha256": COUNTRY_ARCHIVE_SHA256,
                 "raster_sha256": COUNTRY_RASTER_SHA256,
-                "resolution": "30 arc-minutes",
+                "resolution": "30 arc-seconds",
                 "selection": "UN M49 country code 156",
                 "publisher_cell_rule": (
-                    "aggregated pixels use the input country covering the "
-                    "majority of land area"
+                    "source pixels use the input country covering the majority "
+                    "of land area"
+                ),
+                "target_cell_rule": (
+                    "align each centered 0.5-degree footprint with its 60 by 60 "
+                    "native GPW pixels, sum spherical pixel area by country, "
+                    "exclude nodata, and exclude cells without one unique "
+                    "largest country area"
                 ),
                 "role": (
                     "traceable replacement for the unnamed original China "
@@ -1015,8 +1396,16 @@ def _metadata(
                     "and is not an official country boundary"
                 ),
                 "regional_bounds": [72.0, 17.0, 136.0, 55.0],
-                "mask_cells": mask_cells,
+                "mask_cells": int(np.count_nonzero(country_assignment.values)),
                 "finite_population_cells": len(rows),
+                "source_cells_per_target_side": (
+                    country_assignment.source_cells_per_target_side
+                ),
+                "source_cells_per_target_cell": (
+                    country_assignment.source_cells_per_target_side**2
+                ),
+                "tied_target_cells": country_assignment.tied_target_cells,
+                "china_tied_target_cells": (country_assignment.china_tied_target_cells),
                 "reference_mainland_grid_cells": REFERENCE_MAINLAND_GRID_CELLS,
                 "reference_grid_cell_relative_tolerance": (
                     REFERENCE_MAINLAND_GRID_RELATIVE_TOLERANCE
@@ -1107,7 +1496,8 @@ def reproduce(cache_directory: Path, *, write_golden: bool) -> dict[str, object]
         source_directory / COUNTRY_RASTER_FILENAME,
     )
     latitudes, longitudes, population_by_year = _population_grid(population_path)
-    china_mask = _china_mask(country_raster, latitudes, longitudes)
+    country_assignment = _china_mask(country_raster, latitudes, longitudes)
+    china_mask = country_assignment.values
     mask_cells = int(np.count_nonzero(china_mask))
     relative_mask_difference = (
         abs(mask_cells - REFERENCE_MAINLAND_GRID_CELLS) / REFERENCE_MAINLAND_GRID_CELLS
@@ -1118,7 +1508,7 @@ def reproduce(cache_directory: Path, *, write_golden: bool) -> dict[str, object]
             f"{REFERENCE_MAINLAND_GRID_CELLS} +/- 5% plausibility range."
         )
     era5_sources = _era5_sources(cache_directory / "era5-daily-maximum")
-    baseline, target = _era5_arrays(
+    baseline, target, era5_normalized_digests = _era5_arrays(
         era5_sources,
         latitudes,
         longitudes,
@@ -1184,12 +1574,13 @@ def reproduce(cache_directory: Path, *, write_golden: bool) -> dict[str, object]
                 "file": path.name,
                 "size_bytes": path.stat().st_size,
                 "sha256": sha256_file(path),
+                "normalized_t2m_sha256": era5_normalized_digests[path.name],
             }
             for path in era5_sources
         ],
         inclusive_threshold_sensitivity=inclusive_sensitivity,
         series_diagnostics=series_diagnostics,
-        mask_cells=mask_cells,
+        country_assignment=country_assignment,
         cells_sha256=sha256_file(candidate_cells),
         person_days=person_days,
         total_population=total_population,

@@ -62,25 +62,25 @@ additional_person_days =
 The authoritative CDS run recorded in `golden.json` does **not** reproduce the
 published additional-exposure result:
 
-- method-defined additional exposure: **1,687,404,917.62 person-days**,
-  **512,595,082.38 below** 2.20 billion;
-- method-defined additional days per older person: **9.6152**, not 13;
+- method-defined additional exposure: **1,699,776,422.09 person-days**,
+  **500,223,577.91 below** 2.20 billion;
+- method-defined additional days per older person: **9.6146**, not 13;
 - absolute 2019 exposure before subtracting the baseline:
-  **2,272,963,932.94 person-days**, or **12.9519 days per older person**;
+  **2,289,353,400.61 person-days**, or **12.9494 days per older person**;
 - mean annual 1986-2005 exposure subtracted by the appendix method:
-  **585,559,015.32 person-days**.
+  **589,576,978.52 person-days**.
 
 The published pair of 2.20 billion and 13 days per person is much closer to the
 reproduced **absolute** 2019 exposure than to the appendix-defined change, but
-even the absolute total is 72,963,932.94 person-days outside the paper's
+even the absolute total is 89,353,400.61 person-days outside the paper's
 0.01-billion rounding interval. The paper's second time-series check also does
 not reconcile the methods: it reports 71.8 million additional person-days in
-2000, while this run produces 187.13 million using the appendix subtraction and
-132.13 million when the same year's population weights the heatwave-day
+2000, while this run produces 193.80 million using the appendix subtraction and
+138.63 million when the same year's population weights the heatwave-day
 anomaly.
 
 Changing the threshold comparison to the appendix table's `>=` interpretation
-produces 1,687,238,841.01 additional person-days, only 166,076.62 below the
+produces 1,699,610,348.54 additional person-days, only 166,073.54 below the
 strict result, so ties do not explain the discrepancy. The exact original 2020
 mask, analysis code, percentile interpolation, and daily time zone remain
 unpublished. This validation preserves the mismatch as a finding rather than
@@ -95,10 +95,13 @@ and age layout and is not substituted for the source cited by the paper.
 
 The national mask uses UN M49 code 156 from the
 [GPWv4 Revision 11 National Identifier Grid](https://doi.org/10.7927/H4TD9VDP)
-at 30 arc-minutes. This excludes separately coded Hong Kong (344), Taiwan
-(158), and Macao (446) from the national total. That choice is consistent with
-the reported 13-day national denominator; the report still presents Hong Kong
-and Taiwan separately in provincial results.
+at its native 30-arc-second resolution. Each centered 0.5-degree Chambers cell
+footprint aligns with 60 by 60 GPW cells. Regeneration sums spherical pixel
+area by country, excludes nodata, and assigns only cells with one unique
+largest country area. It excludes 56 exact area ties rather than resolving
+them by array order; 26 of those ties include China. This also excludes
+separately coded Hong Kong (344), Taiwan (158), and Macao (446) from the
+national total.
 
 The China appendix does not identify its boundary file. The GPW identifier
 grid is the traceable replacement because the global method says that the
@@ -114,6 +117,11 @@ uncertainty, not treated as an exact input. Regeneration records both the raw
 replacement-mask cell count and the smaller count with finite Chambers
 population. It also requires the replacement count to remain within 5% of the
 independently reported 3,829-cell mainland grid.
+
+Replacing the earlier corner sample of the 30-arc-minute raster with this
+explicit footprint assignment added **12,371,504.46 person-days** to the
+method-defined result. The corrected mask contains 3,905 uniquely assigned
+China cells, of which 3,595 have complete Chambers population data.
 
 ## Recorded assumptions
 
@@ -149,14 +157,15 @@ half a day around the reported whole number.
 
 ## Regeneration
 
-Regeneration reads about 1.66 GB from Zenodo and about 250 MB of regional daily
-statistics from the Copernicus Climate Data Store on a cold cache. The CDS
-requests are split into resumable annual batches. Around 3 GB of free space is
-recommended. CDS queue time dominates: an annual batch typically processes in
-about 4-6 minutes once started, but can wait much longer. This regeneration's
-concurrently submitted annual requests took about 5 hours 20 minutes to clear
-the CDS queue; the final fully cached command completed in 9.8 seconds. The
-committed serial command can therefore take several hours on a cold cache.
+Regeneration reads about 1.66 GB from Zenodo, 257 MB of regional daily
+statistics from the Copernicus Climate Data Store, and a 12.5 MB GPW archive
+on a cold cache. The CDS requests are split into resumable annual batches.
+Around 3 GB of free space is recommended. CDS queue time dominates: an annual
+batch typically processes in about 4-6 minutes once started, but can wait much
+longer. This regeneration's concurrently submitted annual requests took about
+5 hours 20 minutes to clear the CDS queue; the final fully cached command
+completed in 11.1 seconds. The committed serial command can therefore take
+several hours on a cold cache.
 
 Configure `~/.cdsapirc` for ERA5 access and set `EARTHDATA_TOKEN` for the small
 SEDAC country-mask download, then run:
@@ -169,7 +178,11 @@ The command uses the locked `validation` dependency group. It verifies source
 sizes and digests and writes candidates under the cache first. It records
 whether each numeric comparison is inside the publication's stated precision;
 an outside result remains a visible finding rather than being hidden by a
-broader tolerance.
+broader tolerance. Every annual ERA5 cache entry is checked for its NetCDF
+schema, float32 Kelvin values, exact 0.25-degree coordinates, complete
+May-September dates, physical range, and committed normalized-value digest.
+Truncated or parseable-but-changed owned cache files are deleted and retrieved
+again, and fresh bytes must pass the same checks before installation.
 
 The companion repository
 [`palewire/cee-agriculture-climate-analysis`](https://github.com/palewire/cee-agriculture-climate-analysis)
