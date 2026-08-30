@@ -130,11 +130,18 @@ rights.
 
 ### Cache, receipts, and offline work
 
-The default cache uses the operating system's normal application cache
-location. Override it per call with `cache_dir=` or set
-`POPULATION_EXPOSURE_CACHE_DIR`. Each entry is grouped by source, release, and
-year. A file lock keeps concurrent processes from installing the same entry at
-once.
+The default cache is the operating system's normal application cache location
+for the current user. It is not stored in the project or current working
+directory, so verified files are shared by every project run by that user.
+Each entry is grouped by its exact source, release, and year. A file lock keeps
+concurrent processes from installing the same entry at once.
+
+Use `cache_dir=` to select a root for one call, or set
+`POPULATION_EXPOSURE_CACHE_DIR` to select a root for every call in processes
+that inherit the setting. An explicit `cache_dir=` takes precedence over the
+environment setting. Use the same absolute root across projects to share
+verified downloads or registered files; a relative environment value is
+resolved from each process's current working directory.
 
 Downloads stream to a same-directory partial file, enforce size limits, resume
 only after the server advertises and correctly accepts byte ranges, verify
@@ -155,8 +162,13 @@ path = pe.populations.download(
 ```
 
 Offline mode makes no network calls. It uses an exact verified cached or
-registered file, or fails with instructions. Set
+registered file in the selected cache root, or fails with instructions. Set
 `POPULATION_EXPOSURE_OFFLINE=1` to make direct catalog assignment offline.
+
+For sources that require manual acquisition, such as LandScan, register the
+licensed file once in a shared cache root. Other projects using that root can
+reuse the validated copy with the same exact selection; the original licensed
+file is not changed, and its license terms still apply.
 
 Every cached raster has an adjacent `.json` receipt with the exact selection,
 official and landing URLs, retrieval time, local SHA-256, observed grid and
