@@ -16,13 +16,17 @@ The built-in registry provides verified population-count sources. Select one
 with its exact `source-id:YYYY` identifier; `pe.populations.info()` reports its
 license, citation, and download details before anything is downloaded.
 
-| Source ID | Publisher | Available years and grid | Access and size | Best suited for |
+| Source | Population, years, and grid | How counts are placed | Choose it for | Access and main limitation |
 | --- | --- | --- | --- | --- |
-| `worldpop-global-1km` | [WorldPop and CIESIN](https://hub.worldpop.org/geodata/listing?id=64) | 2000-2020, yearly; 30 arc-seconds (about 1 km) | Automatic CC BY download; roughly 0.8-1.2 GB per year | Annual residential estimates |
-| `ghsl-r2023a-mollweide-1km` | [European Commission Joint Research Centre](https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php) | 1975-2020, every 5 years; 1 km World Mollweide equal-area grid | Automatic CC BY download; roughly 300 MB per epoch | Historical residential snapshots |
-| `gpwv4-r11-count` | [CIESIN, Columbia University and NASA SEDAC](https://sedac.ciesin.columbia.edu/data/set/gpw-v4-population-count-rev11) | 2000, 2005, 2010, 2015, 2020; 30 arc-seconds (about 1 km) | CC BY download requires your Earthdata token; roughly 405 MB per year | Those specific GPW count releases |
-| `chambers-hybrid` | [Jonathan Chambers](https://zenodo.org/records/6011021) | 1950-2020, yearly; 0.25 degrees | Automatic CC BY download, but the shared source is 4.1 GB once | Long annual history when a coarser grid is suitable |
-| `landscan-global` | [Oak Ridge National Laboratory](https://landscan.ornl.gov/) | 2000-2024, yearly; 30 arc-seconds (about 1 km) | Manually download after ORNL registration and license acceptance; no redistribution | Ambient, 24-hour population estimates |
+| [`worldpop-global-1km`](https://hub.worldpop.org/geodata/listing?id=64) | **Residential**, modeled estimates.<br>2000-2020, yearly.<br>30 arc-seconds (about 1 km). | The built-in series is WorldPop's **unconstrained Global 2000-2020 1 km mosaics**. | Annual residential estimates. | Automatic CC BY download (about 0.8-1.2 GB/year).<br>**Limitation:** a modeled grid, not local census observations. |
+| [`ghsl-r2023a-mollweide-1km`](https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php) | **Residential** counts.<br>1975-2020, five-year epochs.<br>1 km World Mollweide equal-area grid. | Census and administrative totals are distributed using built-up distribution, volume, and classification. | Comparable historical residential snapshots and area-based work. | Automatic CC BY download (about 300 MB/epoch).<br>**Limitation:** fine cells do not mean fine census inputs. |
+| [`gpwv4-r11-count`](https://sedac.ciesin.columbia.edu/data/set/gpw-v4-population-count-rev11) | **Residential** census baseline.<br>2000-2020, five-year epochs.<br>30 arc-seconds (about 1 km). | Lightly modeled: census counts are allocated across their source areas. | A transparent census-based baseline. | CC BY download with Earthdata authentication (about 405 MB/epoch).<br>**Limitation:** source-area detail varies by place. |
+| [`chambers-hybrid`](https://zenodo.org/records/6011021) | **Residential** counts.<br>1950-2020, yearly.<br>0.25 degrees. | Hybrid of GPWv4, ISIMIP Histsoc, and UN World Population Prospects demographic data. | Long annual history, especially climate work aligned to ERA5. | Automatic CC BY download; 4.1 GB shared source.<br>**Limitation:** coarse spatial detail. |
+| [`landscan-global`](https://landscan.ornl.gov/) | **Ambient** population (average 24-hour presence).<br>2000-2024, yearly.<br>30 arc-seconds (about 1 km). | Ambient counts represent where people may be present, rather than home residence. | Disaster response and presence-style exposure. | Manual licensed acquisition; no redistribution.<br>**Limitation:** not a residential population source. |
+
+Choose first by population meaning and date, then by the quality and detail of
+the source data at your place and the scale of the analysis. A source's output
+grid is not its census precision or a measure of accuracy.
 
 The registry does not download LandScan or bypass its license terms. GPW needs
 an Earthdata token. WorldPop, GHSL, and Chambers download from their publishers,
