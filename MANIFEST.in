@@ -19,7 +19,9 @@ include uv.lock
 include zizmor.yml
 recursive-include .devcontainer *
 recursive-include .github *
+include docs/Makefile
 recursive-include docs *.md
+recursive-include docs *.py
 recursive-include examples *.py
 recursive-include scripts *.py
 recursive-include tests *.py

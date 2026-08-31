@@ -231,6 +231,9 @@ GHSL = SourceSpec(
         "resolution.",
         "The catalog includes estimates through 2020; publisher projections for "
         "2025 and 2030 are intentionally excluded.",
+        "GHS-POP allocates residential census and administrative totals using "
+        "built-up data; do not treat it as independent when a hazard model uses "
+        "built-up area.",
     ),
     filename_template="GHS_POP_E{year}_GLOBE_R2023A_54009_1000_V1_0.tif",
     archive_member_template="GHS_POP_E{year}_GLOBE_R2023A_54009_1000_V1_0.tif",
@@ -353,7 +356,6 @@ LANDSCAN = SourceSpec(
     doi=None,
     doi_by_year=MappingProxyType(
         {
-            2023: "10.48690/1531770",
             2024: "10.48690/1532445",
         }
     ),
@@ -377,9 +379,14 @@ LANDSCAN = SourceSpec(
     filename_template="landscan-global-{year}.tif",
     archive_member_template=None,
     expected_width=43_200,
-    expected_height=20_880,
+    expected_height=21_600,
     expected_resolution=(1 / 120, 1 / 120),
-    expected_bounds=(-180.0, -90.0, 180.0, 84.0),
+    expected_bounds=(
+        -180.0,
+        -89.99999999280098,
+        179.99999998559997,
+        89.999999999999,
+    ),
     expected_nodata=None,
     plausible_total=_GLOBAL_TOTAL,
     max_download_bytes=10_000_000_000,

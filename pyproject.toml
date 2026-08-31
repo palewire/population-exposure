@@ -17,8 +17,11 @@ dependencies = [
     "rasterio>=1.4.4,<1.5",
     "shapely>=2.1.0",
 ]
-authors = [{ name = "Ben Welsh", email = "b@palewi.re" }]
-description = "Assign population values to hazard data"
+authors = [
+    { name = "Ben Welsh", email = "b@palewi.re" },
+    { name = "Casey Miller" },
+]
+description = "Add population counts to hazard tables, vector polygons, and raster cells."
 keywords = ["hazards", "pandas", "population"]
 license = "MIT"
 license-files = ["LICENSE"]
@@ -34,7 +37,7 @@ classifiers = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/palewire/population-exposure#readme"
+Documentation = "https://palewi.re/docs/population-exposure/"
 Source = "https://github.com/palewire/population-exposure"
 Issues = "https://github.com/palewire/population-exposure/issues"
 
@@ -56,6 +59,14 @@ test = [
     "pytest-cov",
     "hypothesis",
     "pytest-timeout",
+]
+docs = [
+    "sphinx",
+    "sphinx-autobuild",
+    "sphinxcontrib-mermaid",
+    "sphinx-copybutton",
+    "myst-parser",
+    "sphinx-palewire-theme>=0.1.10",
 ]
 
 [tool.setuptools.package-dir]

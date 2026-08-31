@@ -6,12 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Correct LandScan Global 2024 grid validation to accept the published global
+  43,200 by 21,600-cell raster.
+
 ### Added
 
 - Add an offline GPWv4 Revision 11 cross-resolution tabular golden fixture that
   matches shuffled native cells and independently published one-degree totals.
 - Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
   and an explicit source-checked regeneration script.
+- Add a single-page Sphinx documentation site, published at
+  https://palewi.re/docs/population-exposure/.
 - Add `assign_population()` for joining population values to tabular hazard rows
   by exact cell keys.
 - Extend `assign_population()` to GeoDataFrames, common vector paths, GeoTIFFs,

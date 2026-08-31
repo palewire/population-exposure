@@ -105,6 +105,20 @@ def use_tiny_source(
     return tiny
 
 
+def test_landscan_2024_grid_covers_the_full_global_extent() -> None:
+    """Keep LandScan 2024 registration checks aligned with its published grid."""
+    source = _sources.LANDSCAN
+
+    assert source.expected_width == 43_200
+    assert source.expected_height == 21_600
+    assert source.expected_bounds == (
+        -180.0,
+        -89.99999999280098,
+        179.99999998559997,
+        89.999999999999,
+    )
+
+
 def fake_downloader_from(
     source_path: Path,
     calls: list[dict[str, object]],
@@ -155,10 +169,13 @@ def test_list_and_info_expose_verified_source_facts() -> None:
     assert ghsl.meaning == "residential"
     assert ghsl.license.startswith("Creative Commons Attribution")
     assert ghsl.official_url.endswith("_V1_0.zip")
-    landscan = populations.info("landscan-global:2024")
-    assert landscan.meaning == "ambient"
-    assert landscan.doi == "10.48690/1532445"
-    assert "redistribution" in landscan.license
+    assert any("do not treat it as independent" in note for note in ghsl.notes)
+    landscan_2023 = populations.info("landscan-global:2023")
+    assert landscan_2023.doi is None
+    landscan_2024 = populations.info("landscan-global:2024")
+    assert landscan_2024.meaning == "ambient"
+    assert landscan_2024.doi == "10.48690/1532445"
+    assert "redistribution" in landscan_2024.license
 
 
 @pytest.mark.parametrize(
