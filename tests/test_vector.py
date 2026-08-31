@@ -96,10 +96,28 @@ def test_vector_assignment_preserves_features_and_fractional_coverage(
 
     assert isinstance(result, gpd.GeoDataFrame)
     assert result.index.equals(hazard.index)
-    assert result.columns.tolist() == ["risk", "notes", "geometry", "population"]
+    assert result.columns.tolist() == [
+        "risk",
+        "notes",
+        "geometry",
+        "population",
+        "population_data_fraction",
+        "population_data_complete",
+    ]
     assert result["population"].tolist() == [7.0, 3.0]
+    assert result["population_data_fraction"].tolist() == [1.0, 1.0]
+    assert result["population_data_complete"].tolist() == [True, True]
     assert result.crs == hazard.crs
-    assert_geodataframe_equal(result.drop(columns="population"), original)
+    assert_geodataframe_equal(
+        result.drop(
+            columns=[
+                "population",
+                "population_data_fraction",
+                "population_data_complete",
+            ]
+        ),
+        original,
+    )
     assert_geodataframe_equal(hazard, original)
     assert result.attrs["population_assignment"] == {
         "method": "exactextract_sum",
@@ -108,6 +126,7 @@ def test_vector_assignment_preserves_features_and_fractional_coverage(
         "overlaps_allowed": False,
         "reprojected": False,
         "partial_coverage_allowed": False,
+        "missing_population_data_allowed": False,
     }
 
 
@@ -571,7 +590,7 @@ def test_unexpected_exactextract_results_fail(
         )
 
 
-def test_no_valid_cells_return_zero_after_spatial_coverage_check() -> None:
+def test_no_valid_cells_return_missing_after_spatial_coverage_check() -> None:
     summary = pd.DataFrame(
         {
             "__population_exposure_row__": [0],
@@ -580,13 +599,14 @@ def test_no_valid_cells_return_zero_after_spatial_coverage_check() -> None:
         }
     )
 
-    totals = _ordered_totals(
+    totals, valid_cells = _ordered_totals(
         summary,
         expected_rows=1,
         spatial_coverage=np.array([0.5]),
     )
 
-    np.testing.assert_array_equal(totals, [0.0])
+    assert np.isnan(totals).all()
+    np.testing.assert_array_equal(valid_cells, [0.0])
 
 
 def test_geodesic_area_rejects_a_half_earth_polygon() -> None:

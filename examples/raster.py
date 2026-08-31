@@ -45,3 +45,8 @@ with TemporaryDirectory() as directory:
     hazard_values, population_values = exposed.read()
     print(hazard_values)
     print(population_values)
+
+    # The result says how much of the hazard grid the population raster covers
+    # and how much of it holds real values rather than no-data.
+    print(exposed.attrs["population_coverage_complete"])
+    print(exposed.attrs["population_data_complete"])

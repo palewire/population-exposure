@@ -38,6 +38,7 @@ def population_frame() -> pd.DataFrame:
 def test_public_api_is_limited_to_documented_symbols() -> None:
     assert population_exposure.__all__ == [
         "CrsMismatchError",
+        "MissingPopulationDataError",
         "PartialCoverageError",
         "RasterAssignment",
         "assign_population",

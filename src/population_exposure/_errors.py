@@ -18,14 +18,30 @@ class CrsMismatchError(ValueError):
 
 
 class PartialCoverageError(ValueError):
-    """Raised when a hazard geometry lies outside the population raster.
+    """Raised when a hazard lies outside the population raster's outline.
 
-    The package rejects vector features that are not completely covered and
-    raster hazards with no spatial overlap. This error subclasses
+    The package requires vector features and hazard rasters to sit entirely
+    inside the population raster's outer edge. This is about where the grid
+    reaches, not about whether it holds values there. This error subclasses
     ``ValueError``, so existing handlers that catch ``ValueError`` still work.
 
     Examples:
         >>> import population_exposure as pe
         >>> issubclass(pe.PartialCoverageError, ValueError)
+        True
+    """
+
+
+class MissingPopulationDataError(ValueError):
+    """Raised when the population raster holds no values where a hazard sits.
+
+    A no-data cell records that the source has nothing to say about a place.
+    It is not a count of zero people, so the package refuses to report one.
+    This error subclasses ``ValueError``, so existing handlers that catch
+    ``ValueError`` still work.
+
+    Examples:
+        >>> import population_exposure as pe
+        >>> issubclass(pe.MissingPopulationDataError, ValueError)
         True
     """
