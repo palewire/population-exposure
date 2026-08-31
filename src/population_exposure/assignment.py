@@ -106,14 +106,16 @@ def assign_population(
 ) -> pd.DataFrame | gpd.GeoDataFrame | RasterAssignment:
     """Return hazards with an estimated population represented by a source/year.
 
-    Hazard and population inputs must share one coordinate system, and vector
-    features must sit inside the population raster. Both rules can be relaxed
-    one at a time with an explicit opt-in.
+    Spatial hazard and population inputs must share one coordinate system, and
+    vector features must sit inside the population raster. Table assignment
+    uses exact keys and has no coordinate system. Both spatial rules can be
+    relaxed one at a time with an explicit opt-in.
 
     The result is not a count of observed people, exact households, or
     event-time presence. Vector allocation uses the covered share of each
-    population cell; raster allocation uses coverage-weighted sum resampling.
-    A finer output grid does not add demographic detail.
+    population cell; raster allocation uses coverage-weighted sum resampling;
+    table allocation uses an exact key join. A finer output grid does not add
+    demographic detail.
 
     Args:
         hazard: A pandas table, GeoDataFrame, vector file path, GeoTIFF path,

@@ -13,11 +13,12 @@ Python 3.11 or newer is required.
 ## What the result estimates
 
 `assign_population()` returns the **estimated population represented by the
-selected source and reference year under coverage-weighted allocation**. It
-does not identify observed people, exact households, or who was present during
-an event. The result inherits the source's meaning: for example, a residential
-baseline estimates residents represented by that source and year, while
-LandScan represents average 24-hour ambient presence.
+selected source and reference year**. Spatial hazards use coverage-weighted
+allocation; table hazards use exact key joins. It does not identify observed
+people, exact households, or who was present during an event. The result
+inherits the source's meaning: for example, a residential baseline estimates
+residents represented by that source and year, while LandScan represents
+average 24-hour ambient presence.
 
 For vector hazards, a population cell crossing a polygon boundary contributes
 according to the share of the cell area covered by that polygon. For raster
