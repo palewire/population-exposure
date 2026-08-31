@@ -12,7 +12,7 @@ import rasterio
 from geopandas.testing import assert_geodataframe_equal
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
-from shapely.geometry import LineString, MultiPolygon, Polygon, box
+from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Polygon, box
 
 import population_exposure as pe
 from population_exposure import assign_population
@@ -428,6 +428,25 @@ def test_no_valid_cells_return_zero_after_spatial_coverage_check() -> None:
 def test_geodesic_area_rejects_a_half_earth_polygon() -> None:
     with pytest.raises(ValueError, match="half or more"):
         _geodesic_area(box(-180, 0, 180, 90))
+
+
+def test_geodesic_area_rejects_nonpositive_area() -> None:
+    geometry = Polygon([(0, 0), (1, 0), (2, 0), (0, 0)])
+
+    with pytest.raises(ValueError, match="non-positive geodesic area"):
+        _geodesic_area(geometry)
+
+
+@pytest.mark.parametrize(
+    ("geometry", "message"),
+    [
+        (GeometryCollection(), "no area"),
+        (GeometryCollection([LineString([(0, 0), (1, 1)])]), "no polygonal area"),
+    ],
+)
+def test_geodesic_area_rejects_no_polygonal_area(geometry, message) -> None:
+    with pytest.raises(RuntimeError, match=message):
+        _geodesic_area(geometry)
 
 
 @pytest.mark.parametrize("geometry", [Polygon(), MultiPolygon()])

@@ -85,7 +85,7 @@ def assign_vector_population(
         allow_reprojection: True to transform the hazard onto the population
             coordinate system automatically.
         allow_partial_coverage: True to allow features that reach outside the
-            population raster, and to report each feature's physical
+            population raster, and to report each feature's approximate physical
             surface-area share that was covered. This fraction is not the share
             of population captured and must not scale a partial total.
 
@@ -98,6 +98,8 @@ def assign_vector_population(
             differ and reprojection was not allowed.
         population_exposure.PartialCoverageError: If a feature reaches outside
             the population raster and partial coverage was not allowed.
+        RuntimeError: If partial coverage is requested and a feature's
+            intersection with the population raster has no polygonal area.
         ValueError: If the hazard geometry or column names cannot be used.
 
     Examples:
@@ -367,7 +369,7 @@ def _surface_coverage_fractions(
     population: DatasetReader,
     population_crs: object,
 ) -> np.ndarray:
-    """Return each feature's covered share of physical Earth-surface area.
+    """Return each feature's approximate covered share of physical Earth-surface area.
 
     The strict coverage rule uses the population grid's own plane. This
     separate calculation reports a projection-independent physical-area share
@@ -384,8 +386,11 @@ def _surface_coverage_fractions(
         the WGS84 ellipsoid.
 
     Raises:
+        RuntimeError: If a feature's intersection with the population raster
+            has no polygonal area.
         ValueError: If a polygon covers half or more of the Earth, which the
-            geodesic area routine cannot measure unambiguously; is empty; has a
+            geodesic area routine cannot measure unambiguously; has a
+            non-positive or non-finite geodesic area; is empty; has a
             non-finite ring; or needs more than 100,000 vertices in one ring.
 
     Examples:
@@ -461,13 +466,15 @@ def _polygonal_geometry(geometry: BaseGeometry) -> BaseGeometry:
     """
     if isinstance(geometry, (shapely.Polygon, shapely.MultiPolygon)):
         return geometry
+    if geometry.is_empty:
+        raise RuntimeError("Population footprint intersection has no area.")
     parts = [
         part
         for part in shapely.get_parts(geometry)
         if isinstance(part, (shapely.Polygon, shapely.MultiPolygon))
     ]
     if not parts:
-        raise RuntimeError("Population footprint intersection has no area.")
+        raise RuntimeError("Population footprint intersection has no polygonal area.")
     polygonal = shapely.union_all(parts)
     if not isinstance(polygonal, (shapely.Polygon, shapely.MultiPolygon)):
         raise RuntimeError("Population footprint intersection has no polygonal area.")
@@ -484,8 +491,10 @@ def _geodesic_area(geometry: BaseGeometry) -> float:
         float: The positive physical area in square meters.
 
     Raises:
+        RuntimeError: If the input geometry has no polygonal area.
         ValueError: If a polygon covers half or more of the Earth, which the
-            geodesic area routine cannot measure unambiguously; is empty; has a
+            geodesic area routine cannot measure unambiguously; has a
+            non-positive or non-finite geodesic area; is empty; has a
             non-finite ring; or needs more than 100,000 vertices in one ring.
 
     Examples:
@@ -501,15 +510,21 @@ def _geodesic_area(geometry: BaseGeometry) -> float:
     areas: list[float] = []
     for polygon in polygons:
         area, _ = _WGS84_GEOD.geometry_area_perimeter(polygon)
-        if (
-            not np.isfinite(area)
-            or area <= 0
-            or area >= _WGS84_HALF_SURFACE_AREA * (1 - _HALF_SURFACE_TOLERANCE)
-        ):
+        if not np.isfinite(area):
+            raise ValueError(
+                "population coverage cannot be measured because a polygon "
+                "component has a non-finite geodesic area."
+            )
+        if abs(area) >= _WGS84_HALF_SURFACE_AREA * (1 - _HALF_SURFACE_TOLERANCE):
             raise ValueError(
                 "population coverage cannot be measured for a polygon that "
                 "covers half or more of the Earth. Split it into smaller "
                 "polygons before assignment."
+            )
+        if area <= 0:
+            raise ValueError(
+                "population coverage cannot be measured because a polygon "
+                "component has a non-positive geodesic area."
             )
         areas.append(area)
     return float(sum(areas))
@@ -521,7 +536,7 @@ def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
     The input's edges are straight in longitude and latitude, while
     ``Geod.geometry_area_perimeter`` follows geodesics between consecutive
     coordinates. Splitting every edge into at most 0.1-degree pieces keeps that
-    difference below 2.5e-7 relative error for latitude-band areas while
+    difference below 1e-6 relative error for latitude-band areas while
     limiting a world-spanning rectangular ring to 10,801 vertices.
 
     Args:
