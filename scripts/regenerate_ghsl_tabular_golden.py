@@ -144,6 +144,58 @@ SOURCES = (
 )
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects so a pinned HTTPS source cannot be downgraded.
+
+    Args:
+        None.
+
+    Returns:
+        A URL-opener redirect handler that rejects every redirect.
+
+    Examples:
+        >>> NoRedirectHandler()
+        <scripts.regenerate_ghsl_tabular_golden.NoRedirectHandler object at ...>
+    """
+
+    def redirect_request(
+        self,
+        request: urllib.request.Request,
+        file: object,
+        code: int,
+        message: str,
+        headers: object,
+        new_url: str,
+    ) -> urllib.request.Request:
+        """Raise instead of following a redirect from a fixed source URL.
+
+        Args:
+            request: Original request that received the redirect.
+            file: Open HTTP response object supplied by urllib.
+            code: HTTP redirect status code.
+            message: HTTP redirect reason phrase.
+            headers: HTTP redirect response headers.
+            new_url: Redirect destination URL.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            ValueError: Always, because source redirects are not permitted.
+
+        Examples:
+            >>> handler = NoRedirectHandler()
+            >>> handler.redirect_request(
+            ...     None, None, 302, "Found", None, "https://example.test"
+            ... )
+            Traceback (most recent call last):
+            ...
+            ValueError: Redirects are not permitted for pinned sources.
+        """
+        del request, file, code, message, headers, new_url
+        raise ValueError("Redirects are not permitted for pinned sources.")
+
+
 def sha256(path: Path) -> str:
     """Return the SHA-256 digest of one file.
 
@@ -195,11 +247,9 @@ def cached_source(source: Source, cache_directory: Path) -> Path:
         headers={"User-Agent": "population-exposure"},
     )
     try:
+        opener = urllib.request.build_opener(NoRedirectHandler())
         with (
-            urllib.request.urlopen(  # noqa: S310 - URL scheme is checked above.
-                request,
-                timeout=DOWNLOAD_TIMEOUT_SECONDS,
-            ) as response,
+            opener.open(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response,
             partial.open("xb") as output,
         ):
             content_length = response.headers.get("Content-Length")

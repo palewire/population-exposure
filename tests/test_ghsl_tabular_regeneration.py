@@ -10,12 +10,37 @@ import pytest
 from scripts.regenerate_ghsl_tabular_golden import (
     COUNTRY_STATS_ARCHIVE,
     WORKBOOK_COLUMNS,
+    NoRedirectHandler,
     _category_for_smod,
     _workbook_header,
     build_fixture,
     extract_member,
     workbook_totals,
 )
+
+
+@pytest.mark.unit
+def test_regeneration_rejects_source_redirects() -> None:
+    """Prevent pinned HTTPS sources from following a redirect.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_regeneration_rejects_source_redirects()
+    """
+    with pytest.raises(ValueError, match="Redirects are not permitted"):
+        NoRedirectHandler().redirect_request(
+            None,
+            None,
+            302,
+            "Found",
+            None,
+            "http://example.test/source",
+        )
 
 
 @pytest.mark.unit
