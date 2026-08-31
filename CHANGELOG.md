@@ -54,6 +54,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Derive Chambers Hybrid annual totals directly from its published NetCDF-4
+  layout. The file stores 720 latitude rows and 14 age bands, which GDAL cannot
+  read as the 721-row, 21-band raster previously assumed.
 - Correct source licenses, citations, and caveats in the population catalog,
   including the GHS-POP R2023A European Commission reuse notice and the
   LandScan 2024 DOI citation.

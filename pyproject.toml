@@ -10,6 +10,7 @@ dependencies = [
     "exactextract>=0.3.0",
     "filelock>=3.16",
     "geopandas>=1.1.0",
+    "h5py>=3.16.0",
     "numpy>=1.26",
     "pandas>=2.2",
     "platformdirs>=4.3",

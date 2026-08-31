@@ -343,15 +343,16 @@ CHAMBERS = SourceSpec(
         "not assume spatial or temporal consistency across the 2000 seam.",
         "Pre-2000 Histsoc data were upscaled from 0.5 degrees to 0.25 degrees; "
         "treat local outliers as best-effort estimates.",
-        "The source contains all years and 21 age bands; one annual total is "
+        "The source contains all years and 14 five-year age bands from 0 through "
+        "65; one annual total is "
         "derived in bounded windows without loading the full cube into memory.",
     ),
     filename_template="chambers-hybrid-{year}.tif",
     archive_member_template=None,
     expected_width=1_440,
-    expected_height=721,
+    expected_height=720,
     expected_resolution=(0.25, 0.25),
-    expected_bounds=None,
+    expected_bounds=(-180.0, -90.0, 180.0, 90.0),
     expected_nodata=(float("nan"),),
     plausible_total=_GLOBAL_TOTAL,
     max_download_bytes=4_122_344_510,
