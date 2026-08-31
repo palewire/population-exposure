@@ -35,17 +35,20 @@ conservation difference does not establish source accuracy.
 
 ## Population registry
 
-The built-in registry provides verified population-count sources. Select one
-with its exact `source-id:YYYY` identifier; `pe.populations.info()` reports its
-license, citation, and download details before anything is downloaded.
+The built-in registry provides curated population-count source metadata. Select
+one with its exact `source-id:YYYY` identifier; `pe.populations.info()` reports
+its license, citation, caveats, and download details before anything is
+downloaded. Downloads and registered files are checked against the catalogued
+year, grid, and count structure; this is not an independent scientific review
+or source-authentication service.
 
 | Source | Population, years, and grid | How counts are placed | Choose it for | Access and main limitation |
 | --- | --- | --- | --- | --- |
-| [`worldpop-global-1km`](https://hub.worldpop.org/geodata/listing?id=64) | **Residential**, modeled estimates.<br>2000-2020, yearly.<br>30 arc-seconds (about 1 km). | The built-in series is WorldPop's **unconstrained Global 2000-2020 1 km mosaics**. | Annual residential estimates. | Automatic CC BY download (about 0.8-1.2 GB/year).<br>**Limitation:** a modeled grid, not local census observations. |
-| [`ghsl-r2023a-mollweide-1km`](https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php) | **Residential** counts.<br>1975-2020, five-year epochs.<br>1 km World Mollweide equal-area grid. | Census and administrative totals are distributed using built-up distribution, volume, and classification. | Comparable historical residential snapshots and area-based work. | Automatic CC BY download (about 300 MB/epoch).<br>**Limitation:** fine cells do not mean fine census inputs. |
-| [`gpwv4-r11-count`](https://sedac.ciesin.columbia.edu/data/set/gpw-v4-population-count-rev11) | **Residential** census baseline.<br>2000-2020, five-year epochs.<br>30 arc-seconds (about 1 km). | Lightly modeled: census counts are allocated across their source areas. | A transparent census-based baseline. | CC BY download with Earthdata authentication (about 405 MB/epoch).<br>**Limitation:** source-area detail varies by place. |
-| [`chambers-hybrid`](https://zenodo.org/records/6011021) | **Residential** counts.<br>1950-2020, yearly.<br>0.25 degrees. | Hybrid of GPWv4, ISIMIP Histsoc, and UN World Population Prospects demographic data. | Long annual history, especially climate work aligned to ERA5. | Automatic CC BY download; 4.1 GB shared source.<br>**Limitation:** coarse spatial detail. |
-| [`landscan-global`](https://landscan.ornl.gov/) | **Ambient** population (average 24-hour presence).<br>2000-2024, yearly.<br>30 arc-seconds (about 1 km). | Ambient counts represent where people may be present, rather than home residence. | Disaster response and presence-style exposure. | Manual licensed acquisition; no redistribution.<br>**Limitation:** not a residential population source. |
+| [`worldpop-global-1km`](https://doi.org/10.5258/SOTON/WP00647) | **Residential**, modeled estimates.<br>2000-2020, yearly.<br>30 arc-seconds (about 1 km). | The archived, unconstrained Global 2000-2020 1 km mosaic, not its separately published UN-adjusted branch. | Annual residential estimates. | Automatic CC BY download (about 0.8-1.2 GB/year).<br>**Limitation:** annual model layers, not annual local census observations. |
+| [`ghsl-r2023a-mollweide-1km`](https://doi.org/10.2905/2FF68A52-5B5B-4A22-8F40-C41DA8332CFE) | **Residential**, modeled and harmonized estimates.<br>1975-2020, five-year epochs.<br>1 km World Mollweide equal-area grid. | Census and administrative totals are distributed with built-up data. | Comparable historical residential snapshots and area-based work. | Automatic download under the [European Commission reuse notice](https://eur-lex.europa.eu/eli/dec/2011/833/oj).<br>**Limitation:** not independent of built-up hazards; nominal cell size is not source-total precision. |
+| [`gpwv4-r11-count`](https://doi.org/10.7927/H4JW8BX5) | **Residential** reference-year estimates.<br>2000-2020, five-year epochs.<br>30 arc-seconds (about 1 km). | Census and register totals are allocated proportionally from source units. | A transparent census-based baseline. | CC BY download with Earthdata authentication (about 405 MB/epoch).<br>**Limitation:** source units vary by place; 1 km cells are not 1 km enumeration. |
+| [`chambers-hybrid`](https://doi.org/10.5281/zenodo.6011021) | **Residential** counts.<br>1950-2020, yearly.<br>0.25 degrees. | Histsoc (1950-1999), GPWv4 (2000-2020), and UN World Population Prospects demographic data. | Long annual history, especially climate work aligned to ERA5. | Automatic CC BY download; 4.1 GB shared source.<br>**Limitation:** pre-2000 0.5-degree data were upscaled; treat local outliers as best-effort, and do not assume consistency across the 2000 seam. |
+| [`landscan-global`](https://doi.org/10.48690/1532445) | **Ambient**, un-warned average 24-hour presence.<br>2000-2024, yearly.<br>30 arc-seconds (about 1 km). | Ambient counts estimate where people may be present, rather than home residence. | Disaster response and presence-style exposure. | Manual licensed acquisition; no redistribution.<br>**Limitation:** not residents or event-time occupancy; annual releases can change methods and inputs. |
 
 Choose first by population meaning, reference year, and the scale of the
 analysis, then by the source's coverage and detail at your place. A source's
@@ -69,15 +72,17 @@ population = pe.populations.download(population_selection)
 print(f"Population source and year: {population_selection}")
 ```
 
-`pe.populations.download()` verifies and caches the selected raster. By default,
-it uses the current user's operating-system cache, so verified rasters are
-shared across that user's projects. Calling it again with the same selection
-reuses the verified cached file unless `refresh=True`; use `cache_dir=` or
-`POPULATION_EXPOSURE_CACHE_DIR` to select another cache root.
+`pe.populations.download()` checks and caches the selected raster. By default,
+it uses the current user's operating-system cache, so structurally checked
+rasters are shared across that user's projects. Calling it again with the same
+selection reuses the checked cached file unless `refresh=True`; use `cache_dir=`
+or `POPULATION_EXPOSURE_CACHE_DIR` to select another cache root.
 
 LandScan requires a separate, manually acquired annual GeoTIFF. After accepting
 the ORNL terms and downloading the 2019 file, register it once to obtain the
-local path used below:
+local path used below. Registration checks its declared year, grid, and count
+values; confirming that it is an ORNL LandScan release remains the registrant's
+responsibility:
 
 ```python
 landscan_selection = "landscan-global:2019"

@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Correct source licenses, citations, and caveats in the population catalog,
+  including the GHS-POP R2023A European Commission reuse notice and the
+  LandScan 2024 DOI citation.
 - Return `0.0` for vector areas that are spatially covered but contain only
   population no-data cells. Raster hazards entirely outside the population
   raster now raise `PartialCoverageError`; overlapping no-data and zero-count
@@ -67,8 +70,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   raster alignment.
 - Add a lazy, window-readable `RasterAssignment` result for paired hazard and
   aligned-population cells.
-- Add a verified `populations` catalog for explicit WorldPop, GHSL, GPWv4,
-  Chambers, and LandScan source/year selections, safe downloads and
+- Add a curated `populations` catalog with structural checks for explicit WorldPop,
+  GHSL, GPWv4, Chambers, and LandScan source/year selections, safe downloads and
   registration, platform caching, offline use, receipts, and assignment attrs.
 - Add validation, examples, plain-language documentation, property tests, and
   package build checks for population assignment.

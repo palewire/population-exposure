@@ -152,7 +152,7 @@ def fake_downloader_from(
     return fake_download
 
 
-def test_list_and_info_expose_verified_source_facts() -> None:
+def test_list_and_info_expose_curated_source_facts() -> None:
     sources = populations.list()
 
     assert [source.source_id for source in sources] == [
@@ -165,17 +165,43 @@ def test_list_and_info_expose_verified_source_facts() -> None:
     assert all(source.supported_years for source in sources)
     ghsl = populations.info("ghsl-r2023a-mollweide-1km:2020")
     assert ghsl.release == "R2023A V1.0"
+    assert (
+        ghsl.title == "GHS-POP R2023A - GHS population grid multitemporal (1975-2030)"
+    )
     assert ghsl.crs == "ESRI:54009"
     assert ghsl.meaning == "residential"
-    assert ghsl.license.startswith("Creative Commons Attribution")
+    assert ghsl.license.startswith("European Commission reuse notice")
+    assert "third-party intellectual property rights" in ghsl.license
+    assert ghsl.landing_page == (
+        "https://data.jrc.ec.europa.eu/dataset/2ff68a52-5b5b-4a22-8f40-c41da8332cfe"
+    )
     assert ghsl.official_url.endswith("_V1_0.zip")
     assert any("do not treat it as independent" in note for note in ghsl.notes)
+    assert ghsl.citation.startswith("Schiavina, M., Freire, S., and MacManus, K.")
+    assert "Carioli" not in ghsl.citation
+    worldpop = populations.info("worldpop-global-1km:2020")
+    assert any(
+        "not annual local census observations" in note for note in worldpop.notes
+    )
+    gpw = populations.info("gpwv4-r11-count:2020")
+    assert any("not 1 km enumeration" in note for note in gpw.notes)
+    chambers = populations.info("chambers-hybrid:2000")
+    assert any("2000 seam" in note for note in chambers.notes)
     landscan_2023 = populations.info("landscan-global:2023")
     assert landscan_2023.doi is None
+    assert "10.48690/1532445" not in landscan_2023.citation
     landscan_2024 = populations.info("landscan-global:2024")
     assert landscan_2024.meaning == "ambient"
     assert landscan_2024.doi == "10.48690/1532445"
     assert "redistribution" in landscan_2024.license
+    assert landscan_2024.citation == (
+        "Lebakula, V., Gonzales, J., Stipek, C., Tsybina, E., Zimmer, A., "
+        "Nukavarapu, N., Byeonghwa, J., Reynolds, B., Kaufman, J., Fan, J., "
+        "Martin, A., Buck, W., Basford, S., Faxon, A., Meade, S., & Urban, M. "
+        "(2024). LandScan 2024 [Dataset]. Oak Ridge National Laboratory. "
+        "https://doi.org/10.48690/1532445"
+    )
+    assert any("registrant's responsibility" in note for note in landscan_2024.notes)
 
 
 @pytest.mark.parametrize(
@@ -566,9 +592,18 @@ def test_landscan_guides_manual_acquisition_and_registration(
     assert original.read_bytes() == original_bytes
     receipt = json.loads(registered.with_suffix(".tif.json").read_text())
     assert receipt["population_meaning"] == "ambient"
+    assert receipt["citation"] == populations.info("landscan-global:2024").citation
+    assert receipt["license"] == populations.info("landscan-global:2024").license
+    assert (
+        "source identity remains the registrant's responsibility"
+        in receipt["processing_note"]
+    )
     assert "original file was not modified" in receipt["processing_note"]
 
-    with pytest.raises(ValueError, match="verified cached file was retained"):
+    with pytest.raises(
+        ValueError,
+        match="structurally checked cached file was retained",
+    ):
         populations.download(
             "landscan-global:2024",
             cache_dir=tmp_path / "cache",

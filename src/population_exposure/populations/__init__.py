@@ -1,4 +1,4 @@
-"""Discover, acquire, and register verified population-count rasters."""
+"""Discover, acquire, and register curated population-count rasters."""
 
 from population_exposure.populations._api import download, info, list, register
 from population_exposure.populations._models import SelectionInfo, SourceInfo

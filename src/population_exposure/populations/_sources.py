@@ -54,6 +54,9 @@ class SourceSpec:
     max_download_bytes: int
     exact_download_bytes: int | None = None
     publisher_checksum: str | None = None
+    citation_by_year: Mapping[int, str] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
     expected_bounds_by_year: Mapping[int, tuple[float, float, float, float] | None] = (
         field(default_factory=lambda: MappingProxyType({}))
     )
@@ -98,7 +101,11 @@ class SourceSpec:
             official_url=self.url_template.format(year=year),
             doi=doi,
             license=self.license,
-            citation=self.citation_template.format(year=year),
+            citation=(
+                self.citation_by_year[year]
+                if year in self.citation_by_year
+                else self.citation_template.format(year=year)
+            ),
             units=self.units,
             meaning=self.meaning,
             crs=self.crs,
@@ -132,12 +139,16 @@ class SourceSpec:
 
 
 _CC_BY_4 = "Creative Commons Attribution 4.0 International (CC BY 4.0)"
+_EC_REUSE_NOTICE = (
+    "European Commission reuse notice: reuse is authorised provided the source is "
+    "acknowledged; it does not apply to third-party intellectual property rights."
+)
 _GLOBAL_TOTAL = (100_000_000.0, 20_000_000_000.0)
 
 WORLDPOP = SourceSpec(
     source_id="worldpop-global-1km",
     release="Global 2000-2020 1 km mosaics",
-    title="WorldPop unconstrained global 1 km population counts",
+    title="Unconstrained global mosaics 2000-2020 (1 km resolution)",
     publisher="WorldPop and CIESIN",
     years=tuple(range(2000, 2021)),
     acquisition="automatic",
@@ -162,9 +173,9 @@ WORLDPOP = SourceSpec(
     format="single-band GeoTIFF",
     download_size="roughly 0.8-1.2 GB for one year",
     notes=(
-        "This is the unconstrained global mosaic series.",
-        "The catalog does not describe this route as the separately published "
-        "UN-adjusted series.",
+        "This archived series is the unconstrained Global 2000-2020 1 km mosaic, "
+        "not the separately published UN-adjusted branch.",
+        "Its annual layers are modeled estimates, not annual local census observations.",
     ),
     filename_template="ppp_{year}_1km_Aggregated.tif",
     archive_member_template=None,
@@ -200,12 +211,12 @@ WORLDPOP = SourceSpec(
 GHSL = SourceSpec(
     source_id="ghsl-r2023a-mollweide-1km",
     release="R2023A V1.0",
-    title="GHS-POP R2023A World Mollweide 1 km population counts",
-    publisher="European Commission Joint Research Centre",
+    title="GHS-POP R2023A - GHS population grid multitemporal (1975-2030)",
+    publisher="European Commission, Joint Research Centre (JRC)",
     years=tuple(range(1975, 2021, 5)),
     acquisition="automatic",
     delivery="zip",
-    landing_page="https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php",
+    landing_page="https://data.jrc.ec.europa.eu/dataset/2ff68a52-5b5b-4a22-8f40-c41da8332cfe",
     url_template=(
         "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/"
         "GHS_POP_GLOBE_R2023A/GHS_POP_E{year}_GLOBE_R2023A_54009_1000/"
@@ -213,11 +224,11 @@ GHSL = SourceSpec(
     ),
     doi="10.2905/2FF68A52-5B5B-4A22-8F40-C41DA8332CFE",
     doi_by_year=MappingProxyType({}),
-    license=_CC_BY_4,
+    license=_EC_REUSE_NOTICE,
     citation_template=(
-        "Schiavina, M., Freire, S., Carioli, A., and MacManus, K. (2023). "
+        "Schiavina, M., Freire, S., and MacManus, K. (2023). "
         "GHS-POP R2023A - GHS population grid multitemporal (1975-2030). "
-        "European Commission, Joint Research Centre. "
+        "European Commission, Joint Research Centre (JRC). "
         "https://doi.org/10.2905/2FF68A52-5B5B-4A22-8F40-C41DA8332CFE"
     ),
     units="population count per cell",
@@ -229,11 +240,11 @@ GHSL = SourceSpec(
     notes=(
         "The source ID includes the R2023A release, Mollweide projection, and 1 km "
         "resolution.",
-        "The catalog includes estimates through 2020; publisher projections for "
-        "2025 and 2030 are intentionally excluded.",
-        "GHS-POP allocates residential census and administrative totals using "
-        "built-up data; do not treat it as independent when a hazard model uses "
-        "built-up area.",
+        "The catalog includes modeled, harmonized residential epochs through 2020; "
+        "publisher projections for 2025 and 2030 are intentionally excluded.",
+        "GHS-POP disaggregates census or administrative totals with built-up data; "
+        "do not treat it as independent of a hazard model using built-up area.",
+        "Its nominal 1 km cells do not establish the precision of their source totals.",
     ),
     filename_template="GHS_POP_E{year}_GLOBE_R2023A_54009_1000_V1_0.tif",
     archive_member_template="GHS_POP_E{year}_GLOBE_R2023A_54009_1000_V1_0.tif",
@@ -249,7 +260,7 @@ GHSL = SourceSpec(
 GPW = SourceSpec(
     source_id="gpwv4-r11-count",
     release="Revision 11 (v4.11)",
-    title="GPWv4 Revision 11 population count",
+    title="Gridded Population of the World, Version 4 (GPWv4): Population Count, Revision 11",
     publisher="CIESIN, Columbia University and NASA SEDAC",
     years=(2000, 2005, 2010, 2015, 2020),
     acquisition="earthdata",
@@ -268,7 +279,8 @@ GPW = SourceSpec(
     citation_template=(
         "Center for International Earth Science Information Network - CIESIN - "
         "Columbia University. (2018). Gridded Population of the World, Version 4 "
-        "(GPWv4): Population Count, Revision 11. NASA SEDAC. "
+        "(GPWv4): Population Count, Revision 11 (Version 4.11) [Data set]. "
+        "Palisades, NY: NASA Socioeconomic Data and Applications Center (SEDAC). "
         "https://doi.org/10.7927/H4JW8BX5"
     ),
     units="population count per cell",
@@ -278,7 +290,10 @@ GPW = SourceSpec(
     format="Earthdata-authenticated ZIP archive containing a single-band GeoTIFF",
     download_size="roughly 405 MB for one 30 arc-second year",
     notes=(
-        "This is population count, not density and not the UN-adjusted variant.",
+        "Reference-year estimates are consistent with census and register totals, "
+        "not 1 km enumeration.",
+        "Counts are allocated proportionally from heterogeneous source units; this "
+        "is population count, not density or the UN-adjusted variant.",
         "A user-owned Earthdata token is used only for the request and is never "
         "stored or written to receipts.",
     ),
@@ -296,7 +311,7 @@ GPW = SourceSpec(
 CHAMBERS = SourceSpec(
     source_id="chambers-hybrid",
     release="Zenodo record 6011021",
-    title="Hybrid gridded demographic data for the world, 1950-2020",
+    title="Hybrid gridded demographic data for the world, 1950-2020 0.25 degree resolution",
     publisher="Jonathan Chambers",
     years=tuple(range(1950, 2021)),
     acquisition="automatic",
@@ -324,11 +339,12 @@ CHAMBERS = SourceSpec(
         "derived locally"
     ),
     notes=(
-        "The source contains all years and 21 age bands.",
-        "One annual total is derived in bounded windows without loading the full "
-        "cube into memory.",
-        "The dataset is associated with the 2020 Lancet Countdown report, not a "
-        "Nature publication.",
+        "The source combines Histsoc for 1950-1999 with GPWv4 for 2000-2020; do "
+        "not assume spatial or temporal consistency across the 2000 seam.",
+        "Pre-2000 Histsoc data were upscaled from 0.5 degrees to 0.25 degrees; "
+        "treat local outliers as best-effort estimates.",
+        "The source contains all years and 21 age bands; one annual total is "
+        "derived in bounded windows without loading the full cube into memory.",
     ),
     filename_template="chambers-hybrid-{year}.tif",
     archive_member_template=None,
@@ -371,8 +387,13 @@ LANDSCAN = SourceSpec(
     format="manually acquired single-band GeoTIFF",
     download_size="release-dependent manual download from the ORNL portal",
     notes=(
-        "Acquire the selected year from ORNL after registration and license "
-        "acceptance, then call populations.register().",
+        "Ambient, un-warned estimates describe average 24-hour presence, not "
+        "residents or event-time occupancy.",
+        "Annual releases can change methods and inputs. Acquire the selected year "
+        "from ORNL after registration and license acceptance, then call "
+        "populations.register().",
+        "Registration checks the declared year, grid, and count values; confirming "
+        "that a file is an ORNL LandScan release remains the registrant's responsibility.",
         "The catalog does not automate the form, use undocumented endpoints, or "
         "redistribute LandScan files.",
     ),
@@ -390,6 +411,17 @@ LANDSCAN = SourceSpec(
     expected_nodata=None,
     plausible_total=_GLOBAL_TOTAL,
     max_download_bytes=10_000_000_000,
+    citation_by_year=MappingProxyType(
+        {
+            2024: (
+                "Lebakula, V., Gonzales, J., Stipek, C., Tsybina, E., Zimmer, A., "
+                "Nukavarapu, N., Byeonghwa, J., Reynolds, B., Kaufman, J., Fan, J., "
+                "Martin, A., Buck, W., Basford, S., Faxon, A., Meade, S., & "
+                "Urban, M. (2024). LandScan 2024 [Dataset]. Oak Ridge National Laboratory. "
+                "https://doi.org/10.48690/1532445"
+            ),
+        }
+    ),
 )
 
 SOURCES: MappingProxyType[str, SourceSpec] = MappingProxyType(
