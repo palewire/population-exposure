@@ -489,9 +489,22 @@ def test_geodesic_area_densification_precheck_counts_duplicate_vertices() -> Non
     assert _densified_ring_vertex_count(geometry.exterior) == len(
         densified.exterior.coords
     )
-    assert _added_geodesic_ring_vertex_count(geometry.exterior) == (
-        len(densified.exterior.coords) - len(geometry.exterior.coords)
+    assert _added_geodesic_ring_vertex_count(geometry.exterior) == 36
+
+
+def test_geodesic_area_densification_counts_added_vertices_with_duplicate_edges(
+    monkeypatch,
+) -> None:
+    geometry = Polygon([(0, 0), (0, 0), (1, 0), (1, 1), (0, 0)])
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 31)
+    monkeypatch.setattr(
+        vector.shapely,
+        "segmentize",
+        lambda *_args, **_kwargs: pytest.fail("segmentize must not run"),
     )
+
+    with pytest.raises(ValueError, match=r"would add 32 vertices"):
+        _densify_geographic_geometry(geometry)
 
 
 def test_geodesic_area_densification_accepts_detailed_ring_with_no_added_vertices(

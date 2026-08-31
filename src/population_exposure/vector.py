@@ -595,7 +595,7 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
 
     Returns:
         int: The number of vertices Shapely will produce after the 0.1-degree
-        splitting limit.
+            splitting limit.
 
     Raises:
         ValueError: If the ring is empty or has non-finite coordinates.
@@ -605,20 +605,8 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         >>> _densified_ring_vertex_count(box(0, 0, 1, 1).exterior)
         41
     """
-    coordinates = np.asarray(ring.coords, dtype=float)
-    if coordinates.ndim != 2 or len(coordinates) < 2:
-        raise ValueError(
-            "population coverage cannot be measured for an empty WGS84 ring."
-        )
-    coordinates = coordinates[:, :2]
-    if not np.isfinite(coordinates).all():
-        raise ValueError(
-            "population coverage cannot be measured for non-finite WGS84 coordinates."
-        )
-    differences = np.diff(coordinates, axis=0)
-    lengths = np.hypot(differences[:, 0], differences[:, 1])
-    nonzero_lengths = lengths[lengths > 0]
-    return int(np.ceil(nonzero_lengths / _MAX_GEODESIC_SEGMENT_DEGREES).sum()) + 1
+    segments = _geodesic_ring_segment_counts(ring)
+    return int(segments.sum()) + 1
 
 
 def _added_geodesic_ring_vertex_count(ring: shapely.LinearRing) -> int:
@@ -638,8 +626,40 @@ def _added_geodesic_ring_vertex_count(ring: shapely.LinearRing) -> int:
         >>> _added_geodesic_ring_vertex_count(box(0, 0, 1, 1).exterior)
         36
     """
-    densified_vertices = _densified_ring_vertex_count(ring)
-    return max(densified_vertices - len(ring.coords), 0)
+    segments = _geodesic_ring_segment_counts(ring)
+    return int(np.maximum(segments - 1, 0).sum())
+
+
+def _geodesic_ring_segment_counts(ring: shapely.LinearRing) -> np.ndarray:
+    """Return the pieces needed to split each edge of one ring.
+
+    Args:
+        ring: Closed WGS84 longitude-latitude ring.
+
+    Returns:
+        numpy.ndarray: The number of 0.1-degree pieces for each edge.
+
+    Raises:
+        ValueError: If the ring is empty or has non-finite coordinates.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _geodesic_ring_segment_counts(box(0, 0, 1, 1).exterior).sum()
+        np.float64(40.0)
+    """
+    coordinates = np.asarray(ring.coords, dtype=float)
+    if coordinates.ndim != 2 or len(coordinates) < 2:
+        raise ValueError(
+            "population coverage cannot be measured for an empty WGS84 ring."
+        )
+    coordinates = coordinates[:, :2]
+    if not np.isfinite(coordinates).all():
+        raise ValueError(
+            "population coverage cannot be measured for non-finite WGS84 coordinates."
+        )
+    differences = np.diff(coordinates, axis=0)
+    lengths = np.hypot(differences[:, 0], differences[:, 1])
+    return np.ceil(lengths / _MAX_GEODESIC_SEGMENT_DEGREES)
 
 
 def _require_coverage(
