@@ -49,6 +49,8 @@ _REPORTED_ROWS = 5
 _SURFACE_AREA_CRS = CRS.from_epsg(4326)
 _SURFACE_AREA_TOLERANCE = 1e-7
 _WGS84_GEOD = Geod(ellps="WGS84")
+_MAX_GEODESIC_SEGMENT_DEGREES = 0.1
+_MAX_GEODESIC_RING_VERTICES = 100_000
 _WGS84_ECCENTRICITY = math.sqrt(1 - (_WGS84_GEOD.b / _WGS84_GEOD.a) ** 2)
 _WGS84_HALF_SURFACE_AREA = (
     math.pi
@@ -490,10 +492,9 @@ def _geodesic_area(geometry: BaseGeometry) -> float:
         True
     """
     normalized = shapely.orient_polygons(_polygonal_geometry(geometry))
+    densified = _densify_geographic_geometry(normalized)
     polygons = (
-        normalized.geoms
-        if isinstance(normalized, shapely.MultiPolygon)
-        else (normalized,)
+        densified.geoms if isinstance(densified, shapely.MultiPolygon) else (densified,)
     )
     areas: list[float] = []
     for polygon in polygons:
@@ -510,6 +511,75 @@ def _geodesic_area(geometry: BaseGeometry) -> float:
             )
         areas.append(area)
     return float(sum(areas))
+
+
+def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
+    """Split geographic-coordinate edges before calculating geodesic area.
+
+    The input's edges are straight in longitude and latitude, while
+    ``Geod.geometry_area_perimeter`` follows geodesics between consecutive
+    coordinates. Splitting every edge into at most 0.1-degree pieces keeps that
+    difference below 2.5e-7 relative error for latitude-band areas while
+    limiting a world-spanning rectangular ring to 10,801 vertices.
+
+    Args:
+        geometry: Polygon or multipolygon in WGS84 longitude and latitude.
+
+    Returns:
+        shapely.geometry.base.BaseGeometry: Geometry with geographic edges
+        split into short straight pieces.
+
+    Raises:
+        ValueError: If an edge would require more than 100,000 vertices in one
+            ring, or if a ring has non-finite coordinates.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> len(_densify_geographic_geometry(box(0, 0, 1, 1)).exterior.coords)
+        41
+    """
+    polygons = (
+        geometry.geoms if isinstance(geometry, shapely.MultiPolygon) else (geometry,)
+    )
+    for polygon in polygons:
+        for ring in (polygon.exterior, *polygon.interiors):
+            vertices = _densified_ring_vertex_count(ring)
+            if vertices > _MAX_GEODESIC_RING_VERTICES:
+                raise ValueError(
+                    "population coverage cannot be measured because a polygon "
+                    "ring would need more than "
+                    f"{_MAX_GEODESIC_RING_VERTICES:,} vertices."
+                )
+    densified = shapely.segmentize(geometry, _MAX_GEODESIC_SEGMENT_DEGREES)
+    assert isinstance(densified, (shapely.Polygon, shapely.MultiPolygon))
+    return densified
+
+
+def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
+    """Return the vertex count after splitting one geographic-coordinate ring.
+
+    Args:
+        ring: Closed WGS84 longitude-latitude ring.
+
+    Returns:
+        int: The number of vertices after the 0.1-degree splitting limit.
+
+    Raises:
+        ValueError: If the ring has non-finite coordinates.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _densified_ring_vertex_count(box(0, 0, 1, 1).exterior)
+        41
+    """
+    coordinates = np.asarray(ring.coords, dtype=float)[:, :2]
+    if not np.isfinite(coordinates).all():
+        raise ValueError(
+            "population coverage cannot be measured for non-finite WGS84 coordinates."
+        )
+    differences = np.diff(coordinates, axis=0)
+    lengths = np.hypot(differences[:, 0], differences[:, 1])
+    return int(np.ceil(lengths / _MAX_GEODESIC_SEGMENT_DEGREES).sum()) + 1
 
 
 def _require_coverage(
