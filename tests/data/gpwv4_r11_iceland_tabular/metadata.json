@@ -1,0 +1,152 @@
+{
+  "citation": "Center for International Earth Science Information Network (CIESIN), Columbia University. (2018). Gridded Population of the World, Version 4 (GPWv4): Population Count, Revision 11. NASA SEDAC. https://doi.org/10.7927/H4JW8BX5",
+  "fixture": "GPWv4 Revision 11 Iceland 2020 tabular cross-resolution",
+  "fixture_files": {
+    "hazard_cells.csv": "6a2c440ed7b4c37f83a0140e1f25c5c4fe37a4ceb3e4e91710199cbf128a0728",
+    "population_1_deg.tif": "59803a02d49aa1a95bb859d9864a1bcef8f3290829365d08a97a5e8da28ed5df",
+    "population_30_sec.tif": "d09a5ca71d7b36e05757174565e9e6e1f25156cc883c4890c391282e71dcde02"
+  },
+  "fixture_grid": {
+    "coarse_bounds": [
+      -23.000000000000057,
+      62.99999999999993,
+      -21.000000000000057,
+      64.99999999999993
+    ],
+    "coarse_nodata": -3.4028230607370965e+38,
+    "coarse_shape": [
+      2,
+      2
+    ],
+    "coarse_transform": [
+      0.9999999999999996,
+      0.0,
+      -23.000000000000057,
+      0.0,
+      -0.9999999999999996,
+      64.99999999999993
+    ],
+    "coarse_window": [
+      157,
+      25,
+      2,
+      2
+    ],
+    "coordinate_decimal_places": 12,
+    "fine_bounds": [
+      -23.000000000000057,
+      62.99999999999993,
+      -21.000000000000057,
+      64.99999999999993
+    ],
+    "fine_masked_cells": 34417,
+    "fine_nodata": -3.4028230607370965e+38,
+    "fine_shape": [
+      240,
+      240
+    ],
+    "fine_transform": [
+      0.00833333333333333,
+      0.0,
+      -23.000000000000057,
+      0.0,
+      -0.00833333333333333,
+      64.99999999999993
+    ],
+    "hazard_rows": 23183
+  },
+  "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "published_oracle": {
+    "cells": [
+      {
+        "absolute_tolerance": 0.0009765888098627329,
+        "difference": -5.7479926908854395e-05,
+        "parent_1_degree_cell": "row-25-column-157",
+        "published_population": 22539.564453125,
+        "reproduced_population": 22539.564395645073
+      },
+      {
+        "absolute_tolerance": 0.007813134230673313,
+        "difference": 0.005523361352970824,
+        "parent_1_degree_cell": "row-25-column-158",
+        "published_population": 206151.703125,
+        "reproduced_population": 206151.70864836135
+      },
+      {
+        "absolute_tolerance": 0.001953139202669263,
+        "difference": -0.0009844849118962884,
+        "parent_1_degree_cell": "row-26-column-157",
+        "published_population": 34228.71484375,
+        "reproduced_population": 34228.71385926509
+      },
+      {
+        "absolute_tolerance": 0.0009765757713466883,
+        "difference": -0.000563648747629486,
+        "parent_1_degree_cell": "row-26-column-158",
+        "published_population": 26983.818359375,
+        "reproduced_population": 26983.817795726252
+      }
+    ],
+    "resolution": "1 degree",
+    "tolerance_basis": "Half of each published float32 cell's ULP plus the standard float64 summation roundoff bound for up to 14,400 valid fine values; relative tolerance is zero."
+  },
+  "purpose": "Exact-coordinate tabular population assignment validation; not a hazard or exposure result.",
+  "source_archives": {
+    "population_1_deg": {
+      "archive": "gpw-v4-population-count-rev11_2020_1_deg_tif.zip",
+      "archive_member": "gpw_v4_population_count_rev11_2020_1_deg.tif",
+      "bytes": 89273,
+      "sha256": "2d797c57abcb09bf6b0e917acec7737961cc017c1bcefe9df477da6cb0c21f6c",
+      "url": "https://data.earthdata.nasa.gov/nasa-earth/human-dimensions/sedac-root/downloads/data/gpw-v4/gpw-v4-population-count-rev11/gpw-v4-population-count-rev11_2020_1_deg_tif.zip"
+    },
+    "population_30_sec": {
+      "archive": "gpw-v4-population-count-rev11_2020_30_sec_tif.zip",
+      "archive_member": "gpw_v4_population_count_rev11_2020_30_sec.tif",
+      "bytes": 405209680,
+      "sha256": "0ffe8501213d00b98707d89884212c3bb18a1917f9b304e39fe91cc3db40720f",
+      "url": "https://data.earthdata.nasa.gov/nasa-earth/human-dimensions/sedac-root/downloads/data/gpw-v4/gpw-v4-population-count-rev11/gpw-v4-population-count-rev11_2020_30_sec_tif.zip"
+    }
+  },
+  "source_grid": {
+    "cells_per_coarse_side": 120,
+    "coarse_bounds": [
+      -180.0,
+      -90.0,
+      179.99999999999983,
+      89.99999999999991
+    ],
+    "coarse_shape": [
+      180,
+      360
+    ],
+    "coarse_transform": [
+      0.9999999999999996,
+      0.0,
+      -180.0,
+      0.0,
+      -0.9999999999999996,
+      89.99999999999991
+    ],
+    "crs": "EPSG:4326",
+    "dtype": "float32",
+    "fine_bounds": [
+      -180.0,
+      -90.0,
+      179.99999999999983,
+      89.99999999999991
+    ],
+    "fine_shape": [
+      21600,
+      43200
+    ],
+    "fine_transform": [
+      0.00833333333333333,
+      0.0,
+      -180.0,
+      0.0,
+      -0.00833333333333333,
+      89.99999999999991
+    ],
+    "nodata": -3.4028230607370965e+38
+  }
+}
