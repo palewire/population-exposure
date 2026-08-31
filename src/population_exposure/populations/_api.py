@@ -78,7 +78,7 @@ def download(
     offline: bool | None = None,
     earthdata_token: str | None = None,
 ) -> Path:
-    """Return a verified cached raster for one explicit catalog selection."""
+    """Return a structurally checked cached raster for one catalog selection."""
     if not isinstance(refresh, bool):
         raise TypeError("refresh must be a boolean.")
     source, year = parse_selection(selection)
@@ -107,7 +107,8 @@ def download(
                     raise ValueError(
                         f"{selection!r} is manually registered and cannot be "
                         "refreshed automatically. Register a newly acquired ORNL "
-                        "file to replace it; the verified cached file was retained."
+                        "file to replace it; the structurally checked cached file "
+                        "was retained."
                     )
                 raise ValueError(_manual_message(selected))
             if refresh:
@@ -190,9 +191,9 @@ def register(
                     sha256=sha256,
                     observed=observed,
                     processing_note=(
-                        "Copied from a caller-owned file after source, year, grid, "
-                        "and population-count validation; the original file was not "
-                        "modified."
+                        "Copied from a caller-owned file after year, grid, and "
+                        "population-count checks; source identity remains the "
+                        "registrant's responsibility. The original file was not modified."
                     ),
                 )
             else:
@@ -210,9 +211,9 @@ def register(
                     sha256=sha256,
                     observed=observed,
                     processing_note=(
-                        "Copied from a caller-owned file after source, year, grid, "
-                        "and population-count validation; the original file was not "
-                        "modified."
+                        "Copied from a caller-owned file after year, grid, and "
+                        "population-count checks; source identity remains the "
+                        "registrant's responsibility. The original file was not modified."
                     ),
                 )
             return entry.raster
@@ -600,8 +601,8 @@ def _offline_message(selected: SelectionInfo) -> str:
     """Return an actionable no-network cache miss."""
     return (
         f"Offline mode made no network request, but {selected.selection!r} has no "
-        "verified cached or registered raster. Run populations.download() online "
-        "or populations.register() first."
+        "structurally checked cached or registered raster. Run "
+        "populations.download() online or populations.register() first."
     )
 
 
