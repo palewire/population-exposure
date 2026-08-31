@@ -227,13 +227,13 @@ def transform_geometries(
 def reject_wrapped_geometries(
     geometries: Iterable[BaseGeometry],
     *,
-    crs: object,
+    hazard_crs: object,
 ) -> None:
     """Reject polygon rings with an unsplit antimeridian edge.
 
     Args:
-        geometries: ``Polygon`` or ``MultiPolygon`` geometry written in ``crs``.
-        crs: The coordinate system of the geometries.
+        geometries: ``Polygon`` or ``MultiPolygon`` hazard geometry.
+        hazard_crs: The coordinate system of the hazard geometries.
 
     Returns:
         None.
@@ -244,9 +244,12 @@ def reject_wrapped_geometries(
 
     Examples:
         >>> from shapely.geometry import box
-        >>> reject_wrapped_geometries([box(0, 0, 1, 1)], crs="EPSG:4326")
+        >>> reject_wrapped_geometries(
+        ...     [box(0, 0, 1, 1)],
+        ...     hazard_crs="EPSG:4326",
+        ... )
     """
-    geographic = bool(as_crs(crs, parameter="hazard").is_geographic)
+    geographic = bool(as_crs(hazard_crs, parameter="hazard").is_geographic)
     if not geographic:
         return
     for geometry in geometries:

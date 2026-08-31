@@ -322,7 +322,7 @@ def _geometries_on_population_grid(
     """
     geometries = list(hazard.geometry.to_numpy())
     if not reprojecting:
-        reject_wrapped_geometries(geometries, crs=population.crs)
+        reject_wrapped_geometries(geometries, hazard_crs=hazard.crs)
         return cast("list[BaseGeometry]", geometries)
     return transform_geometries(
         geometries,
