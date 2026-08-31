@@ -1164,6 +1164,7 @@ name = "population-exposure"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "defusedxml" },
     { name = "exactextract" },
     { name = "filelock" },
     { name = "geopandas" },
@@ -1189,7 +1190,6 @@ dev = [
     { name = "zizmor" },
 ]
 test = [
-    { name = "defusedxml" },
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1198,6 +1198,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "exactextract", specifier = ">=0.3.0" },
     { name = "filelock", specifier = ">=3.16" },
     { name = "geopandas", specifier = ">=1.1.0" },
@@ -1222,7 +1223,6 @@ dev = [
     { name = "zizmor" },
 ]
 test = [
-    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-cov" },

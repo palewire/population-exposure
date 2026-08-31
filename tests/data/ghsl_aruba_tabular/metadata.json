@@ -1,0 +1,109 @@
+{
+  "citations": {
+    "country_stats_methodology": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_COUNTRY_STATS_MT_GLOBE_R2024A/V1-0/GHS_COUNTRY_STATS_MT_GLOBE_R2024A.zip",
+    "ghsl_data_package_2023": "https://human-settlement.emergency.copernicus.eu/documents/GHSL_Data_Package_2023.pdf",
+    "smod_product": "https://human-settlement.emergency.copernicus.eu/data/ghs_smod2023.json"
+  },
+  "differences": {
+    "aruba_global_smod_minus_workbook": {
+      "RUR": 2023.6953101234449,
+      "UC": -2204.0671780983394,
+      "UCL": -1430.9363169616481
+    },
+    "global_smod_minus_workbook": {
+      "RUR": 189090185.19788742,
+      "UC": -44177649.299446106,
+      "UCL": -147963775.29997158
+    }
+  },
+  "fixture": "GHSL R2023A 2020 Aruba exact-coordinate tabular cell join",
+  "fixture_files": {
+    "cells.csv": "9e695492428cf2d4faeed76bf860da298988b79a5ce56cd0dee536c5e1fcbed9"
+  },
+  "grid": {
+    "crs": "EPSG:4326",
+    "height": 21384,
+    "selected_cells": 216,
+    "transform": [
+      0.008333333300326923,
+      0.0,
+      -180.00791593130032,
+      0.0,
+      -0.00833333329979504,
+      89.0995831776456
+    ],
+    "width": 43202
+  },
+  "methodology": {
+    "cell_selection": "Centers of WGS84 30 arc-second cells within GADM 4.1 Aruba, using rasterio.geometry_mask(all_touched=False).",
+    "coordinate_definition": "longitude and latitude are SMOD pixel centers serialized with Python repr(float); the same canonical values key both tables.",
+    "l1_mapping": {
+      "RUR": [
+        11,
+        12,
+        13
+      ],
+      "UC": [
+        30
+      ],
+      "UCL": [
+        21,
+        22,
+        23
+      ],
+      "excluded": [
+        0,
+        10,
+        -200
+      ]
+    },
+    "scope": "SMOD is a settlement classification, not a hazard. This checks the public tabular cell-join method.",
+    "workbook_difference": "GHS-COUNTRY-STATS creates clusters separately within GADM 4.1 country boundaries; it is not a direct sum of global SMOD cells."
+  },
+  "reproduced": {
+    "aruba_global_smod": {
+      "RUR": 6527.742726123723,
+      "UC": 54699.13036944953,
+      "UCL": 43746.81865900907
+    },
+    "global_smod": {
+      "RUR": 1775443296.2288246,
+      "UC": 3447471540.2214417,
+      "UCL": 2614986871.141282
+    }
+  },
+  "sources": {
+    "GHS_COUNTRY_STATS_MT_GLOBE_R2024A.zip": {
+      "bytes": 1546681,
+      "sha256": "bdc5069a6cf9c5fe001d6b12c7d6b1dc1fccf9d063db1406d90a6507cce8a4be",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_COUNTRY_STATS_MT_GLOBE_R2024A/V1-0/GHS_COUNTRY_STATS_MT_GLOBE_R2024A.zip"
+    },
+    "GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.zip": {
+      "bytes": 482351880,
+      "sha256": "579fb7477b33d9be61e9562b170ea108a670b85ef6fe23b61a22d17200929636",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_POP_GLOBE_R2023A/GHS_POP_E2020_GLOBE_R2023A_4326_30ss/V1-0/GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.zip"
+    },
+    "GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss_V2_0.zip": {
+      "bytes": 33775811,
+      "sha256": "7cf02eb4d0c08e5f987dc899dfcf26be4d77e21aed72a3358cef2ded2d0f75e2",
+      "url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_SMOD_GLOBE_R2023A/GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss/V2-0/GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss_V2_0.zip"
+    },
+    "gadm41_ABW_0.json": {
+      "bytes": 2495,
+      "sha256": "f9532884df370f11b75d8a5652b90644f9ef6c644623759c9bbcae9768c41c6a",
+      "url": "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_ABW_0.json"
+    }
+  },
+  "workbook": {
+    "aruba": {
+      "RUR": 4504.047416000278,
+      "UC": 56903.19754754787,
+      "UCL": 45177.75497597072
+    },
+    "global": {
+      "RUR": 1586353111.0309372,
+      "UC": 3491649189.520888,
+      "UCL": 2762950646.4412537
+    }
+  }
+}

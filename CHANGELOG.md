@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add a network-free GHSL Aruba tabular golden fixture that pins an exact
+  longitude/latitude population-cell join, settlement-class mapping, and the
+  measured difference from the country-split official summary workbook.
 - Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
   and an explicit source-checked regeneration script.
 - Add `assign_population()` for joining population values to tabular hazard rows
