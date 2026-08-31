@@ -35,7 +35,8 @@ def test_ghsl_regeneration_rejects_unsafe_paths(path: str) -> None:
         None.
 
     Examples:
-        >>> test_ghsl_regeneration_rejects_unsafe_paths("/outside.csv")
+        >>> _safe_relative_path(r"cells\\table.csv", description="test path")
+        PurePosixPath('cells/table.csv')
     """
     with pytest.raises(ValueError, match="unsafe path"):
         _safe_relative_path(path, description="test path")
