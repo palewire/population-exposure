@@ -104,11 +104,18 @@ def assign_population(
     hazard_band: int | None = None,
     conservation_tolerance: float | None = None,
 ) -> pd.DataFrame | gpd.GeoDataFrame | RasterAssignment:
-    """Return hazard rows, features, or cells with assigned population.
+    """Return hazards with an estimated population represented by a source/year.
 
-    Hazard and population inputs must share one coordinate system, and vector
-    features must sit inside the population raster. Both rules can be relaxed
-    one at a time with an explicit opt-in.
+    Spatial hazard and population inputs must share one coordinate system, and
+    vector features must sit inside the population raster. Table assignment
+    uses exact keys and has no coordinate system. Both spatial rules can be
+    relaxed one at a time with an explicit opt-in.
+
+    The result is not a count of observed people, exact households, or
+    event-time presence. Vector allocation uses the covered share of each
+    population cell; raster allocation uses coverage-weighted sum resampling;
+    table allocation uses an exact key join. A finer output grid does not add
+    demographic detail.
 
     Args:
         hazard: A pandas table, GeoDataFrame, vector file path, GeoTIFF path,
@@ -121,9 +128,10 @@ def assign_population(
         population_column: Name of the population column to append.
         allow_overlaps: True to allow overlapping vector polygons. It applies
             only to vector hazards.
-        allow_reprojection: True to transform the hazard onto the population
-            coordinate system automatically. It applies only to vector and
-            raster hazards.
+        allow_reprojection: True to transform vector geometry to the population
+            coordinate system, or to warp a population raster to the hazard
+            coordinate system and grid. It applies only to vector and raster
+            hazards.
         allow_partial_coverage: True to allow vector features that reach
             outside the population raster, and to report how much of each was
             covered in physical surface area. The fraction is not the share of
@@ -137,7 +145,9 @@ def assign_population(
 
     Returns:
         pandas.DataFrame | geopandas.GeoDataFrame | RasterAssignment: The
-        hazard input with population assigned, matching the input type.
+        hazard input with the estimated population represented by the
+        selected source and reference year assigned, matching the input
+        type.
 
     Raises:
         population_exposure.CrsMismatchError: If the coordinate systems
@@ -154,6 +164,7 @@ def assign_population(
         >>> import population_exposure as pe
         >>> hazard = pd.DataFrame({"cell": ["A"]})
         >>> population = pd.DataFrame({"cell": ["A"], "population": [10.0]})
+        >>> # Illustrative values: no external source or reference year.
         >>> pe.assign_population(hazard, population, cell_columns="cell")
           cell  population
         0    A        10.0

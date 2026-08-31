@@ -1,6 +1,6 @@
 # population-exposure
 
-Add population counts to hazard tables, vector polygons, and raster cells.
+Add population estimates to hazard tables, vector polygons, and raster cells.
 
 ## Installation
 
@@ -9,6 +9,29 @@ pip install population-exposure
 ```
 
 Python 3.11 or newer is required.
+
+## What the result estimates
+
+`assign_population()` returns the **estimated population represented by the
+selected source and reference year**. Spatial hazards use coverage-weighted
+allocation; table hazards use exact key joins. It does not identify observed
+people, exact households, or who was present during an event. The result
+inherits the source's meaning: for example, a residential baseline estimates
+residents represented by that source and year, while LandScan represents
+average 24-hour ambient presence.
+
+For vector hazards, a population cell crossing a polygon boundary contributes
+according to the share of the cell area covered by that polygon. For raster
+hazards, population counts are moved to the hazard grid with coverage-weighted
+sum resampling. This assumes population is distributed within a cell according
+to covered area. A finer output grid only redistributes the source counts; it
+does not add demographic detail. Source resolution, modeling choices, and the
+scale of the hazard limit local or individual-level inference, and aggregate
+exposure should not be used to infer household or individual outcomes.
+
+Raster conservation is a numerical check on the alignment calculation, not
+validation of the population source and not an uncertainty interval. A small
+conservation difference does not establish source accuracy.
 
 ## Population registry
 
@@ -24,23 +47,26 @@ license, citation, and download details before anything is downloaded.
 | [`chambers-hybrid`](https://zenodo.org/records/6011021) | **Residential** counts.<br>1950-2020, yearly.<br>0.25 degrees. | Hybrid of GPWv4, ISIMIP Histsoc, and UN World Population Prospects demographic data. | Long annual history, especially climate work aligned to ERA5. | Automatic CC BY download; 4.1 GB shared source.<br>**Limitation:** coarse spatial detail. |
 | [`landscan-global`](https://landscan.ornl.gov/) | **Ambient** population (average 24-hour presence).<br>2000-2024, yearly.<br>30 arc-seconds (about 1 km). | Ambient counts represent where people may be present, rather than home residence. | Disaster response and presence-style exposure. | Manual licensed acquisition; no redistribution.<br>**Limitation:** not a residential population source. |
 
-Choose first by population meaning and date, then by the quality and detail of
-the source data at your place and the scale of the analysis. A source's output
-grid is not its census precision or a measure of accuracy. For GHS-POP, choose
-an epoch close to the hazard date; it estimates residents, not people physically
-present.
+Choose first by population meaning, reference year, and the scale of the
+analysis, then by the source's coverage and detail at your place. A source's
+output grid is not its census precision or a measure of accuracy. For GHS-POP,
+choose an epoch that represents the baseline you intend to study; it estimates
+residents represented by that epoch, not people physically present during an
+event.
 
 The registry does not download LandScan or bypass its license terms. GPW needs
 an Earthdata token. WorldPop, GHSL, and Chambers download from their publishers,
 but their file sizes may still be substantial.
 
 Download a selected raster once, then reuse the returned local path in later
-vector or raster assignments:
+vector or raster assignments. Record the source and year with the result:
 
 ```python
 import population_exposure as pe
 
-population = pe.populations.download("worldpop-global-1km:2020")
+population_selection = "worldpop-global-1km:2020"
+population = pe.populations.download(population_selection)
+print(f"Population source and year: {population_selection}")
 ```
 
 `pe.populations.download()` verifies and caches the selected raster. By default,
@@ -50,14 +76,16 @@ reuses the verified cached file unless `refresh=True`; use `cache_dir=` or
 `POPULATION_EXPOSURE_CACHE_DIR` to select another cache root.
 
 LandScan requires a separate, manually acquired annual GeoTIFF. After accepting
-the ORNL terms and downloading the 2024 file, register it once to obtain the
+the ORNL terms and downloading the 2019 file, register it once to obtain the
 local path used below:
 
 ```python
+landscan_selection = "landscan-global:2019"
 landscan_population = pe.populations.register(
-    "landscan-global:2024",
-    "/path/to/your-2024-landscan.tif",
+    landscan_selection,
+    "/path/to/your-2019-landscan.tif",
 )
+print(f"Population source and year: {landscan_selection}")
 ```
 
 ## Quick start with a registry source
@@ -65,17 +93,24 @@ landscan_population = pe.populations.register(
 Use the observed 2024 Hurricane Helene wind swath published by the
 [National Hurricane Center](https://www.nhc.noaa.gov/gis/). This post-storm
 best-track data is not a forecast cone; 64 knots is hurricane-force wind.
+This example reports exposure represented by a **2020 WorldPop residential
+baseline**, not a count of people present during the 2024 storm. The source and
+reference year are printed beside the result.
 
 ```python
 import geopandas as gpd
 
 import population_exposure as pe
 
+population_selection = "worldpop-global-1km:2020"
+population = pe.populations.download(population_selection)
 url = "zip+https://www.nhc.noaa.gov/gis/best_track/al092024_best_track.zip"
 winds = gpd.read_file(url, layer="AL092024_windswath")
 hurricane_force = winds[winds["RADII"] == 64].dissolve()
 exposed = pe.assign_population(hurricane_force, population)
-print(exposed["population"].sum())
+print(
+    f"{population_selection} residential baseline: {exposed['population'].sum():,.1f}"
+)
 ```
 
 NWS information is public domain unless specifically noted otherwise; see the
@@ -88,6 +123,9 @@ struck near Searles Valley, California, on July 6, 2019. Its official USGS
 ShakeMap archive includes a 10 MB Modified Mercalli Intensity (MMI) grid.
 The archive uses an ESRI float raster, so this example saves its MMI field as a
 GeoTIFF with its documented WGS 84 grid before assigning population.
+For a same-year teaching example, use the **LandScan 2019 ambient population**
+source. The result is population represented by that source/year under raster
+allocation, not event-time occupancy.
 
 ```python
 from pathlib import Path
@@ -117,7 +155,10 @@ with rasterio.open(hazard_directory / "mmi_mean.flt") as source:
 assignment = pe.assign_population("ridgecrest-mmi.tif", landscan_population)
 mmi, people = assignment.read()
 pager_vi_or_greater_population = people[mmi >= 5.5].sum()
-print(pager_vi_or_greater_population)
+print(
+    "LandScan 2019 ambient population represented at MMI VI or greater: "
+    f"{pager_vi_or_greater_population:,.1f}"
+)
 ```
 
 This is raster-to-raster assignment: population counts are regridded onto the
@@ -140,7 +181,7 @@ types.
 | `cell_columns` | One table key column or a sequence of table key columns. It is used only for table assignment. The default is `longitude` and `latitude`. |
 | `population_column` | Name of the new output population column. It defaults to `population` and cannot overwrite an existing hazard column. |
 | `allow_overlaps` | Allows overlapping vector polygons. It is `False` by default because adding independent overlapping totals would count shared areas more than once. It applies only to vector hazards. |
-| `allow_reprojection` | Allows the package to move the hazard onto the population coordinate system for you. It is `False` by default, so a mismatch raises an error instead. It applies to vector and raster hazards. |
+| `allow_reprojection` | Allows automatic coordinate transformation. For vector hazards, geometry moves to the population CRS. For raster hazards, the population raster is warped to the hazard CRS and grid. It is `False` by default, so a mismatch raises an error instead. |
 | `allow_partial_coverage` | Allows vector features that reach outside the population raster, and reports how much of each was covered. It is `False` by default, so a partly covered feature raises an error instead. It applies only to vector hazards. |
 | `hazard_band` | A 1-based hazard band number. It is used only for multiband hazard rasters; a one-band raster selects band 1 automatically. |
 | `conservation_tolerance` | The allowed relative difference when a population raster is aligned onto a hazard raster. It applies only to raster hazards. It defaults to `1e-6` on a shared coordinate system, or `1e-3` when `allow_reprojection=True`. |
@@ -162,21 +203,25 @@ boundaries:
 hazard and population coordinate systems do not match: hazard uses EPSG:4326
 and population uses ESRI:54009. Matching coordinate systems are required by
 default because reprojection moves boundaries and can shift population into or
-out of the result. Transform the hazard yourself with
-hazard.to_crs("ESRI:54009") before assignment, or opt in to automatic
-reprojection with pe.assign_population(hazard, population,
-allow_reprojection=True), which adds enough points along every boundary to keep
-curves accurate when the projection changes.
+out of the result. For a vector hazard, transform the hazard with
+hazard.to_crs("ESRI:54009"), or opt in to automatic reprojection with
+pe.assign_population(hazard, population, allow_reprojection=True), which adds
+enough points along every boundary to keep curves accurate. For a raster
+hazard, warp the population raster to the hazard grid instead.
 ```
 
 This is strict by default because moving between coordinate systems is a real
-change to the shape being measured, not a formatting detail. A straight line in
-one projection is usually a curve in another. Transforming only a shape's
-corners cuts those curves off, which quietly undercounts people. In testing, a
-plain 40-degree box drawn in longitude and latitude lost about 11 percent of its
-population when its corners alone were moved onto an equal-area Mollweide grid.
+change to the calculation, not a formatting detail. Choose the direction that
+matches the hazard type:
 
-Move the hazard yourself when you want full control:
+- **Vector hazard:** move the hazard geometry to the population CRS. A straight
+  line in one projection is usually a curve in another, so transforming only
+  the corners can cut those curves off and change the allocation.
+- **Raster hazard:** warp the population raster to the hazard CRS and grid with
+  count-preserving sum resampling. This changes the grid representation and can
+  introduce a small numerical difference.
+
+For vectors, move the hazard yourself when you want full control:
 
 ```python
 import population_exposure as pe
@@ -193,12 +238,27 @@ import population_exposure as pe
 exposed = pe.assign_population(hazard, population, allow_reprojection=True)
 ```
 
-Automatic reprojection adds points along every boundary until the moved edge
-sits within a tenth of one population cell of the true curve, so accuracy is
-measured against the grid the population is read from. Holes and multi-part
-shapes are handled the same way. A shape that would wrap around the world
-across the antimeridian, or that reaches outside the area the population
+Automatic vector reprojection adds points along every boundary until the moved
+edge sits within a tenth of one population cell of the true curve. Holes and
+multi-part shapes are handled the same way. A shape that would wrap around the
+world across the antimeridian, or that reaches outside the area the population
 projection can represent, raises an error instead of being guessed at.
+
+For rasters, automatic reprojection warps the population to the hazard grid:
+
+```python
+import population_exposure as pe
+
+assignment = pe.assign_population(
+    "hazard.tif",
+    "population-counts.tif",
+    allow_reprojection=True,
+)
+```
+
+The aligned raster uses coverage-weighted sum resampling. Its conservation
+difference is a numerical alignment check, not a demographic validation or an
+uncertainty interval.
 
 Table assignment matches exact keys and has no coordinate system, so it is not
 affected.
@@ -293,8 +353,8 @@ coarse population grids, a few hundred cells across, can exceed it; raise
 
 | Key | Meaning |
 | --- | --- |
-| `population_source_total` | Every valid person in the population raster. |
-| `population_covered_total` | The population the hazard footprint covers, measured exactly. |
+| `population_source_total` | The valid population count represented by the source raster. |
+| `population_covered_total` | The source population count covered by the hazard footprint under coverage-weighted allocation. |
 | `population_aligned_total` | The population after alignment onto the hazard grid. |
 | `population_conservation_relative_difference` | The difference between the two totals, relative to the covered total. |
 | `population_conservation_tolerance` | The difference that was allowed. |
@@ -316,8 +376,9 @@ them is used.
 ## Bring your own population raster
 
 Use a one-band GeoTIFF containing finite, non-negative population counts when
-you already have an appropriate local dataset. For polygon hazards, pass its
-path directly:
+you already have an appropriate local dataset. Record its source or release,
+reference year, and residential or ambient meaning. For polygon hazards, pass
+its path directly:
 
 ```python
 import geopandas as gpd
@@ -348,6 +409,7 @@ import population_exposure as pe
 
 chambers = pe.populations.info("chambers-hybrid:2020")
 print(chambers.resolution)  # 0.25 degrees
+population_selection = "chambers-hybrid:2020"
 
 temperature = pd.DataFrame(
     {
@@ -366,11 +428,26 @@ population = pd.DataFrame(
 
 exposed = pe.assign_population(temperature, population)
 hot_population = exposed.loc[exposed["daily_max_c"] >= 38, "population"].sum()
-print(hot_population)
+print(f"{population_selection} residential reference: {hot_population:,.1f}")
 ```
 
 `exposed` keeps the temperature columns, index, and row order, with a new
-`population` column.
+`population` column. This uses the Chambers hybrid **2020 residential
+reference year**; report that source and year with the result.
+
+## Reporting checklist
+
+For each result, report:
+
+- population source or release, population year, and residential or ambient
+  meaning;
+- hazard date and threshold or selection rule;
+- allocation method (coverage-weighted extraction, raster sum resampling, or
+  exact table-key join);
+- reprojection choice and direction, if any;
+- incomplete population support and how it was handled; and
+- raster conservation difference, when applicable, described as a numerical
+  alignment check rather than source validation or uncertainty.
 
 ## API reference
 
