@@ -143,9 +143,6 @@ def test_build_fixture_treats_missing_workbook_categories_as_zero(
 
     Returns:
         None.
-
-    Examples:
-        >>> test_build_fixture_treats_missing_workbook_categories_as_zero(None, None)
     """
     output_directory = tmp_path / "fixture"
     gadm_path = tmp_path / "gadm41_ABW_0.json"
