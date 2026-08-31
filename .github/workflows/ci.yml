@@ -73,10 +73,35 @@ jobs:
       - name: Prune uv cache
         run: uv cache prune --ci
 
+  test-minimum-dependencies:
+    name: Test minimum dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.10.7"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Python
+        run: uv python install 3.11
+
+      - name: Test minimum dependencies
+        run: make minimum-dependency-check UV_PYTHON=3.11
+
+      - name: Prune uv cache
+        run: uv cache prune --ci
+
   build:
     name: Build package
     runs-on: ubuntu-latest
-    needs: [check, test-python]
+    needs: [check, test-python, test-minimum-dependencies]
     steps:
       - name: Checkout
         uses: actions/checkout@v7

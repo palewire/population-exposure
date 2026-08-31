@@ -17,6 +17,17 @@ The suite runs Ruff, ty, dependency and workflow checks, tests with coverage,
 distribution checks, and an example against an installed wheel. You can run
 `make test` for a faster test-only pass.
 
+Before a release candidate, check the declared lower bounds with:
+
+```sh
+make minimum-dependency-check
+```
+
+This uses Python 3.11, installs the lowest compatible versions of the direct
+runtime dependencies, and lets uv resolve compatible transitive dependencies.
+Test-only tools are installed separately at their newest Python 3.11-compatible
+versions so the check tests this project rather than obsolete test tooling.
+
 Install the included Git hooks with:
 
 ```sh

@@ -9,7 +9,7 @@ TEST_ARGS ?=
 RUN = $(if $(UV_PYTHON),UV_PYTHON=$(UV_PYTHON)) $(UV) run
 RUN_DOCS = $(RUN) --group docs
 
-.PHONY: all help bootstrap install install-all install-dev install-test install-docs check verify diff-check lint format-check format fix type-check dependency-check workflow-check manifest-check test test-serial coverage build package-check package-verify docs docs-check linkcheck build-docs serve-docs hooks clean
+.PHONY: all help bootstrap install install-all install-dev install-test install-docs check verify diff-check lint format-check format fix type-check dependency-check workflow-check manifest-check test test-serial minimum-dependency-check coverage build package-check package-verify docs docs-check linkcheck build-docs serve-docs hooks clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z0-9_-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -69,6 +69,16 @@ test: ## Run tests serially
 	$(RUN) pytest $(TEST_ARGS)
 
 test-serial: test ## Run tests without parallel workers
+
+minimum-dependency-check: ## Run tests with the lowest compatible direct dependencies
+	@set -eu; \
+	temp_dir=$$(mktemp -d); trap 'rm -rf "$$temp_dir"' EXIT; \
+	python_version="$(if $(UV_PYTHON),$(UV_PYTHON),3.11)"; \
+	$(UV) venv --python "$$python_version" "$$temp_dir/venv"; \
+	$(UV) pip install --python "$$temp_dir/venv/bin/python" --resolution lowest-direct --editable .; \
+	$(UV) pip install --python "$$temp_dir/venv/bin/python" --group test --resolution highest; \
+	$(UV) pip check --python "$$temp_dir/venv/bin/python"; \
+	"$$temp_dir/venv/bin/python" -m pytest $(TEST_ARGS)
 
 coverage: ## Enforce coverage for PACKAGE
 	$(RUN) pytest $(TEST_ARGS) --cov="$(PACKAGE)" --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under="$(COVERAGE_FAIL_UNDER)"
