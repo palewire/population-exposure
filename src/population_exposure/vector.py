@@ -531,8 +531,8 @@ def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
         split into short straight pieces.
 
     Raises:
-        ValueError: If an edge would require more than 100,000 vertices in one
-            ring, or if a ring has non-finite coordinates.
+        ValueError: If a ring is empty or has non-finite coordinates, or would
+            require more than 100,000 vertices.
 
     Examples:
         >>> from shapely.geometry import box
@@ -569,7 +569,7 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         int: The number of vertices after the 0.1-degree splitting limit.
 
     Raises:
-        ValueError: If the ring has non-finite coordinates.
+        ValueError: If the ring is empty or has non-finite coordinates.
 
     Examples:
         >>> from shapely.geometry import box
