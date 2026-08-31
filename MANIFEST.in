@@ -23,5 +23,6 @@ recursive-include docs *.md
 recursive-include examples *.py
 recursive-include scripts *.py
 recursive-include tests *.py
+recursive-include tests/data/gpwv4_r11_iceland_tabular *.csv *.json *.md *.tif
 recursive-include tests/data/unosat_fl20221125cod_basankusu *.geojson *.json *.md *.tif
 recursive-include tests/fixtures/pager_ridgecrest *

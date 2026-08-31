@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add an offline GPWv4 Revision 11 cross-resolution tabular golden fixture that
+  matches shuffled native cells and independently published one-degree totals.
 - Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
   and an explicit source-checked regeneration script.
 - Add `assign_population()` for joining population values to tabular hazard rows
