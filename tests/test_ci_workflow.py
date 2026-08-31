@@ -25,17 +25,19 @@ def test_ci_checks_minimum_dependencies_on_python_311() -> None:
         Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
     ).read_text(encoding="utf-8")
 
-    assert re.search(r"(?m)^  test-minimum-dependencies:\s*$", workflow)
-    assert re.search(
-        r"(?ms)^  test-minimum-dependencies:\n.*?^\s+name:\s+Test minimum dependencies\s*$",
+    minimum_job = re.search(
+        r"(?ms)^  test-minimum-dependencies:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:|\Z)",
         workflow,
     )
-    assert re.search(r"(?m)^\s+run:\s+uv python install\s+3\.11\s*$", workflow)
+    assert minimum_job
+    minimum_job_body = minimum_job.group("body")
+    assert re.search(r"(?m)^\s+name:\s+Test minimum dependencies\s*$", minimum_job_body)
+    assert re.search(r"(?m)^\s+run:\s+uv python install\s+3\.11\s*$", minimum_job_body)
     assert re.search(
         r"(?m)^\s+run:\s+make minimum-dependency-check\s+UV_PYTHON=3\.11\s*$",
-        workflow,
+        minimum_job_body,
     )
 
-    build_job = re.search(r"(?ms)^  build:\n(?:(?!^  \w).)*", workflow)
+    build_job = re.search(r"(?ms)^  build:\n(?:(?!^  [a-zA-Z0-9_-]+:).)*", workflow)
     assert build_job
     assert re.search(r"(?m)^\s+needs:.*test-minimum-dependencies", build_job.group())
