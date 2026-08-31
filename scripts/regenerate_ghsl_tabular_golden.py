@@ -263,9 +263,7 @@ def extract_member(archive_path: Path, member: str, destination: Path) -> Path:
         ... )  # doctest: +SKIP
         PosixPath('grid.tif')
     """
-    member_path = PurePosixPath(member)
-    if member_path.is_absolute() or ".." in member_path.parts:
-        raise ValueError(f"Unsafe archive member: {member!r}")
+    _safe_relative_path(member, description="Archive member")
     with zipfile.ZipFile(archive_path) as archive:
         try:
             info = archive.getinfo(member)
@@ -277,6 +275,34 @@ def extract_member(archive_path: Path, member: str, destination: Path) -> Path:
         with archive.open(info) as source, destination.open("xb") as output:
             shutil.copyfileobj(source, output, length=DOWNLOAD_BLOCK_BYTES)
     return destination
+
+
+def _safe_relative_path(value: str, *, description: str) -> PurePosixPath:
+    """Return a normalized relative path after rejecting unsafe components.
+
+    Args:
+        value: Path value using either slash style.
+        description: Human-readable source of the path for error messages.
+
+    Returns:
+        Normalized, relative POSIX path.
+
+    Raises:
+        ValueError: If the value is absolute, traverses a parent, or has a drive
+            prefix.
+
+    Examples:
+        >>> _safe_relative_path(r"folder\\grid.tif", description="member")
+        PurePosixPath('folder/grid.tif')
+    """
+    path = PurePosixPath(value.replace("\\", "/"))
+    if (
+        path.is_absolute()
+        or ".." in path.parts
+        or any(":" in part for part in path.parts)
+    ):
+        raise ValueError(f"{description} has an unsafe path: {value!r}")
+    return path
 
 
 def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
@@ -328,9 +354,10 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
         )
         if target is None:
             raise ValueError("Workbook POP_L1 relationship is absent.")
-        target_path = PurePosixPath(target)
-        if target_path.is_absolute() or ".." in target_path.parts:
-            raise ValueError("Workbook POP_L1 relationship is unsafe.")
+        target_path = _safe_relative_path(
+            target,
+            description="Workbook POP_L1 relationship",
+        )
         strings = _shared_strings(archive, namespace)
         sheet = ElementTree.fromstring(archive.read(f"xl/{target_path}"))
     rows = list(_worksheet_rows(sheet, strings, namespace))

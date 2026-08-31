@@ -11,8 +11,34 @@ import pandas as pd
 import pytest
 
 from population_exposure import assign_population
+from scripts.regenerate_ghsl_tabular_golden import _safe_relative_path
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "data" / "ghsl_aruba_tabular"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        r"cells\..\..\outside.csv",
+        "cells/C:/outside.csv",
+        r"cells\C:\outside.csv",
+        "/outside.csv",
+    ],
+)
+def test_ghsl_regeneration_rejects_unsafe_paths(path: str) -> None:
+    """Keep ZIP and workbook path safety checks resistant to bypasses.
+
+    Args:
+        path: Unsafe path form supplied by the parametrized test.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_ghsl_regeneration_rejects_unsafe_paths("/outside.csv")
+    """
+    with pytest.raises(ValueError, match="unsafe path"):
+        _safe_relative_path(path, description="test path")
 
 
 def _tables() -> tuple[pd.DataFrame, pd.DataFrame]:
