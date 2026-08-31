@@ -203,9 +203,16 @@ def cached_source(source: Source, cache_directory: Path) -> Path:
             partial.open("xb") as output,
         ):
             content_length = response.headers.get("Content-Length")
-            if content_length is None or int(content_length) != source.bytes:
+            try:
+                actual_bytes = int(content_length) if content_length is not None else None
+            except (ValueError, TypeError) as exc:
                 raise ValueError(
-                    f"Unexpected Content-Length for {source.url}: {content_length!r}."
+                    f"Non-integer Content-Length for {source.url}: {content_length!r}."
+                ) from exc
+            if actual_bytes is None or actual_bytes != source.bytes:
+                raise ValueError(
+                    f"Unexpected Content-Length for {source.url}: "
+                    f"got {content_length!r}, expected {source.bytes}."
                 )
             copied = 0
             while block := response.read(DOWNLOAD_BLOCK_BYTES):
@@ -335,7 +342,10 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
                 f"Archive lacks required member: {WORKBOOK_MEMBER}"
             ) from error
         if workbook_info.file_size > 1_000_000:
-            raise ValueError("Workbook exceeds its expected extraction limit.")
+            raise ValueError(
+                f"Workbook member {WORKBOOK_MEMBER!r} exceeds extraction limit: "
+                f"{workbook_info.file_size} bytes > 1_000_000 bytes."
+            )
         workbook_bytes = archive.read(workbook_info)
     with zipfile.ZipFile(io.BytesIO(workbook_bytes)) as archive:
         workbook = _parse_workbook_xml(
