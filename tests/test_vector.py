@@ -430,6 +430,11 @@ def test_geodesic_area_rejects_a_half_earth_polygon() -> None:
         _geodesic_area(box(-180, 0, 180, 90))
 
 
+def test_geodesic_area_rejects_an_empty_polygon() -> None:
+    with pytest.raises(ValueError, match="empty WGS84 ring"):
+        _geodesic_area(Polygon())
+
+
 def test_geodesic_area_is_independent_of_ring_orientation() -> None:
     counterclockwise = box(0, 0, 20, 10)
     clockwise = Polygon(tuple(reversed(counterclockwise.exterior.coords)))

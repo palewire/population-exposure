@@ -575,7 +575,12 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         >>> _densified_ring_vertex_count(box(0, 0, 1, 1).exterior)
         41
     """
-    coordinates = np.asarray(ring.coords, dtype=float)[:, :2]
+    coordinates = np.asarray(ring.coords, dtype=float)
+    if coordinates.ndim != 2 or len(coordinates) < 2:
+        raise ValueError(
+            "population coverage cannot be measured for an empty WGS84 ring."
+        )
+    coordinates = coordinates[:, :2]
     if not np.isfinite(coordinates).all():
         raise ValueError(
             "population coverage cannot be measured for non-finite WGS84 coordinates."
