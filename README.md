@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/population-exposure.svg)](https://pypi.org/project/population-exposure/)
 [![License](https://img.shields.io/pypi/l/population-exposure.svg)](https://github.com/palewire/population-exposure/blob/main/LICENSE)
 
-Estimate the number of people in any vector polygon or raster cell.
+Estimate the number of people in hazard tables, vector polygons, or raster cells.
 
 `population-exposure` adds population counts to hazard tables, polygons, and
 raster cells.

@@ -21,7 +21,7 @@ authors = [
     { name = "Ben Welsh", email = "b@palewi.re" },
     { name = "Casey Miller" },
 ]
-description = "Estimate the number of people in any vector polygon or raster cell."
+description = "Estimate the number of people in hazard tables, vector polygons, or raster cells."
 keywords = ["hazards", "pandas", "population"]
 license = "MIT"
 license-files = ["LICENSE"]
