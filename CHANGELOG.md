@@ -23,6 +23,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Correct source licenses, citations, and caveats in the population catalog,
   including the GHS-POP R2023A European Commission reuse notice and the
   LandScan 2024 DOI citation.
+- Reject same-CRS geographic polygon rings with unsplit edges crossing the
+  antimeridian instead of calculating population for the long way around the
+  world. Properly split and supported unwrapped-domain polygons remain valid.
 - Return `0.0` for vector areas that are spatially covered but contain only
   population no-data cells. Raster hazards entirely outside the population
   raster now raise `PartialCoverageError`; overlapping no-data and zero-count

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import geopandas as gpd
 import numpy as np
@@ -14,6 +15,7 @@ from shapely.geometry import box
 
 from population_exposure._crs import (
     _crs_name,
+    _longitude_half_turn,
     as_crs,
     boundary_tolerance,
     require_matching_crs,
@@ -54,6 +56,44 @@ def test_coordinate_systems_without_a_code_use_their_name() -> None:
 
     assert _crs_name(custom) == custom.name
     assert ":" not in _crs_name(custom)
+
+
+@pytest.mark.parametrize(
+    ("axis_info", "message"),
+    [
+        ([], "exactly one east-west longitude axis"),
+        (
+            [
+                SimpleNamespace(
+                    direction="east",
+                    unit_conversion_factor=float("nan"),
+                )
+            ],
+            "positive finite angular unit conversion",
+        ),
+    ],
+    ids=["missing-longitude-axis", "invalid-angular-unit"],
+)
+def test_geographic_wrap_check_rejects_unusable_axis_metadata(
+    axis_info: list[SimpleNamespace],
+    message: str,
+) -> None:
+    """Fail clearly when a geographic CRS cannot supply a half-turn.
+
+    Args:
+        axis_info: Simulated longitude-axis metadata.
+        message: Expected explanation of the metadata problem.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_crs_helpers.py -k unusable_axis``.
+    """
+    crs = SimpleNamespace(is_geographic=True, axis_info=axis_info)
+
+    with pytest.raises(ValueError, match=message):
+        _longitude_half_turn(cast("CRS", crs), parameter="hazard")
 
 
 def test_tolerance_must_be_positive() -> None:
