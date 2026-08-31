@@ -126,7 +126,9 @@ def assign_population(
             raster hazards.
         allow_partial_coverage: True to allow vector features that reach
             outside the population raster, and to report how much of each was
-            covered. It applies only to vector hazards.
+            covered in physical surface area. The fraction is not the share of
+            population captured and must not scale a partial total. It applies
+            only to vector hazards.
         hazard_band: A one-based band number for multiband hazard rasters.
         conservation_tolerance: The allowed relative difference between the
             population covered by the hazard footprint and the population

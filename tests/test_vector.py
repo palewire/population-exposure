@@ -16,7 +16,7 @@ from shapely.geometry import LineString, Polygon, box
 
 import population_exposure as pe
 from population_exposure import assign_population
-from population_exposure.vector import _ordered_totals
+from population_exposure.vector import _geodesic_area, _ordered_totals
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -366,7 +366,7 @@ def test_unreadable_vector_fails_clearly(tmp_path: Path) -> None:
                     "count": [np.inf],
                 }
             ),
-            "overlap at least one valid",
+            "invalid valid-cell count",
         ),
         (
             pd.DataFrame(
@@ -395,4 +395,31 @@ def test_unexpected_exactextract_results_fail(
     message: str,
 ) -> None:
     with pytest.raises((RuntimeError, ValueError), match=message):
-        _ordered_totals(summary, expected_rows=1)
+        _ordered_totals(
+            summary,
+            expected_rows=1,
+            spatial_coverage=np.array([1.0]),
+        )
+
+
+def test_no_valid_cells_return_zero_after_spatial_coverage_check() -> None:
+    summary = pd.DataFrame(
+        {
+            "__population_exposure_row__": [0],
+            "sum": [np.nan],
+            "count": [0.0],
+        }
+    )
+
+    totals = _ordered_totals(
+        summary,
+        expected_rows=1,
+        spatial_coverage=np.array([0.5]),
+    )
+
+    np.testing.assert_array_equal(totals, [0.0])
+
+
+def test_geodesic_area_rejects_a_half_earth_polygon() -> None:
+    with pytest.raises(ValueError, match="half or more"):
+        _geodesic_area(box(0, -45, 180, 45))

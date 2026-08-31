@@ -20,6 +20,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Return `0.0` for vector areas that are spatially covered but contain only
+  population no-data cells. Raster hazards entirely outside the population
+  raster now raise `PartialCoverageError`; overlapping no-data and zero-count
+  areas remain valid.
+- Report `population_coverage_fraction` as a share of physical Earth-surface
+  area rather than planar area in the raster's coordinate system. It remains a
+  coverage description, not a population multiplier.
 - Keep boundaries curved when reprojecting. Vector features and raster
   footprints now gain points along every edge until the moved boundary is
   within a tenth of one population cell of the true curve. Moving only the

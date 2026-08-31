@@ -11,7 +11,11 @@ import rasterio
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
 
-from population_exposure import RasterAssignment, assign_population
+from population_exposure import (
+    PartialCoverageError,
+    RasterAssignment,
+    assign_population,
+)
 from population_exposure import raster as raster_module
 from population_exposure.raster import normalize_raster_source
 
@@ -139,6 +143,59 @@ def test_partial_extent_and_nodata_are_accounted_for(tmp_path: Path) -> None:
     assert aligned.mask[:, 2].all()
     assert result.attrs["population_source_total"] == 8.0
     assert result.attrs["population_covered_total"] == 8.0
+    assert result.attrs["population_aligned_total"] == 8.0
+
+
+def test_fully_outside_raster_raises_coverage_error(tmp_path: Path) -> None:
+    population = write_raster(
+        tmp_path / "population.tif",
+        np.array([[1.0, 2.0], [3.0, 4.0]]),
+    )
+    hazard = write_raster(
+        tmp_path / "hazard.tif",
+        np.ones((2, 2), dtype=np.int16),
+        transform=from_origin(10, 12, 1, 1),
+        nodata=-32768,
+    )
+
+    with pytest.raises(PartialCoverageError) as caught:
+        assign_population(hazard, population)
+
+    message = str(caught.value)
+    assert "entirely outside" in message
+    assert "Hazard bounds" in message
+    assert "population bounds" in message
+
+
+@pytest.mark.parametrize(
+    ("values", "masked"),
+    [
+        (np.array([[-9999.0, 2.0], [3.0, 4.0]]), True),
+        (np.array([[0.0, 2.0], [3.0, 4.0]]), False),
+    ],
+    ids=["nodata", "zero-population"],
+)
+def test_overlapping_raster_with_no_population_is_accepted(
+    tmp_path: Path,
+    values: np.ndarray,
+    masked: bool,
+) -> None:
+    population = write_raster(tmp_path / "population.tif", values)
+    hazard = write_raster(
+        tmp_path / "hazard.tif",
+        np.ones((1, 1), dtype=np.int16),
+        transform=from_origin(0, 2, 1, 1),
+        nodata=-32768,
+    )
+
+    result = assign_population(hazard, population)
+    _, aligned = result.read()
+
+    assert result.attrs["population_covered_total"] == pytest.approx(0.0)
+    assert result.attrs["population_aligned_total"] == pytest.approx(0.0)
+    assert bool(np.ma.getmaskarray(aligned).item()) is masked
+    if not masked:
+        assert aligned.item() == pytest.approx(0.0)
 
 
 def test_fractional_partial_extent_is_conserved(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, cast
 
 import geopandas as gpd
@@ -9,8 +10,10 @@ import numpy as np
 import shapely
 from exactextract import exact_extract
 from pyogrio.errors import DataSourceError
+from pyproj import CRS, Geod
 
 from population_exposure._crs import (
+    as_crs,
     boundary_tolerance,
     require_matching_crs,
     transform_geometries,
@@ -43,6 +46,21 @@ _COVERAGE_COLUMNS = (COVERAGE_FRACTION_COLUMN, COVERAGE_COMPLETE_COLUMN)
 # The allowance absorbs floating-point noise, not a real sliver of missing area.
 COVERAGE_TOLERANCE = 1e-9
 _REPORTED_ROWS = 5
+_SURFACE_AREA_CRS = CRS.from_epsg(4326)
+_SURFACE_AREA_TOLERANCE = 1e-7
+_WGS84_GEOD = Geod(ellps="WGS84")
+_WGS84_ECCENTRICITY = math.sqrt(1 - (_WGS84_GEOD.b / _WGS84_GEOD.a) ** 2)
+_WGS84_HALF_SURFACE_AREA = (
+    math.pi
+    * _WGS84_GEOD.a**2
+    * (
+        1
+        + (1 - _WGS84_ECCENTRICITY**2)
+        * math.atanh(_WGS84_ECCENTRICITY)
+        / _WGS84_ECCENTRICITY
+    )
+)
+_HALF_SURFACE_TOLERANCE = 1e-12
 
 
 def assign_vector_population(
@@ -65,7 +83,9 @@ def assign_vector_population(
         allow_reprojection: True to transform the hazard onto the population
             coordinate system automatically.
         allow_partial_coverage: True to allow features that reach outside the
-            population raster, and to report how much of each was covered.
+            population raster, and to report each feature's physical
+            surface-area share that was covered. This fraction is not the share
+            of population captured and must not scale a partial total.
 
     Returns:
         geopandas.GeoDataFrame: The hazard features with population appended,
@@ -153,13 +173,27 @@ def assign_vector_population(
                 strategy="feature-sequential",
             ),
         )
-        totals = _ordered_totals(summary, expected_rows=len(working))
+        totals = _ordered_totals(
+            summary,
+            expected_rows=len(working),
+            spatial_coverage=coverage,
+        )
+        surface_coverage = (
+            _surface_coverage_fractions(
+                geometries,
+                population_reader,
+                population_reader.crs,
+            )
+            if allow_partial_coverage
+            else None
+        )
         population_crs = population_reader.crs
 
     result = source
     result[population_column] = totals
     if allow_partial_coverage:
-        result[COVERAGE_FRACTION_COLUMN] = coverage
+        assert surface_coverage is not None
+        result[COVERAGE_FRACTION_COLUMN] = surface_coverage
         result[COVERAGE_COMPLETE_COLUMN] = coverage >= 1.0 - COVERAGE_TOLERANCE
     result.attrs = {
         **source.attrs,
@@ -324,6 +358,158 @@ def _coverage_fractions(
         where=areas > 0,
     )
     return np.clip(fractions, 0.0, 1.0)
+
+
+def _surface_coverage_fractions(
+    geometries: list[BaseGeometry],
+    population: DatasetReader,
+    population_crs: object,
+) -> np.ndarray:
+    """Return each feature's covered share of physical Earth-surface area.
+
+    The strict coverage rule uses the population grid's own plane. This
+    separate calculation reports a projection-independent physical-area share
+    without changing that rule.
+
+    Args:
+        geometries: Hazard geometry in the population raster's coordinate
+            system.
+        population: The open population raster.
+        population_crs: The population raster's coordinate system.
+
+    Returns:
+        numpy.ndarray: One share between 0 and 1 for each feature, measured on
+        the WGS84 ellipsoid.
+
+    Raises:
+        ValueError: If a polygon covers half or more of the Earth, which the
+            geodesic area routine cannot measure unambiguously.
+
+    Examples:
+        >>> import rasterio
+        >>> from shapely.geometry import box
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     _surface_coverage_fractions([box(0, 0, 1, 1)], raster, raster.crs)
+        array([1.])
+    """
+    footprint = raster_footprint(population)
+    covered = [
+        _polygonal_geometry(geometry.intersection(footprint)) for geometry in geometries
+    ]
+    geographic_geometries = _geographic_geometries(geometries, population_crs)
+    geographic_covered = _geographic_geometries(covered, population_crs)
+    full_areas = np.asarray(
+        [_geodesic_area(geometry) for geometry in geographic_geometries],
+        dtype=float,
+    )
+    covered_areas = np.asarray(
+        [_geodesic_area(geometry) for geometry in geographic_covered],
+        dtype=float,
+    )
+    fractions = covered_areas / full_areas
+    return np.clip(fractions, 0.0, 1.0)
+
+
+def _geographic_geometries(
+    geometries: list[BaseGeometry],
+    source_crs: object,
+) -> list[BaseGeometry]:
+    """Return polygon geometries in WGS84 longitude and latitude.
+
+    Args:
+        geometries: Polygon or multipolygon geometry in ``source_crs``.
+        source_crs: The coordinate system of the geometries.
+
+    Returns:
+        list[shapely.geometry.base.BaseGeometry]: The input geometry in WGS84
+        longitude and latitude.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _geographic_geometries([box(0, 0, 1, 1)], "EPSG:4326")[0].geom_type
+        'Polygon'
+    """
+    if as_crs(source_crs, parameter="population") == _SURFACE_AREA_CRS:
+        return geometries
+    return transform_geometries(
+        geometries,
+        source_crs=source_crs,
+        target_crs=_SURFACE_AREA_CRS,
+        tolerance=_SURFACE_AREA_TOLERANCE,
+    )
+
+
+def _polygonal_geometry(geometry: BaseGeometry) -> BaseGeometry:
+    """Return the polygonal parts of an area intersection.
+
+    Args:
+        geometry: Geometry created by an intersection.
+
+    Returns:
+        shapely.geometry.base.BaseGeometry: A polygon or multipolygon.
+
+    Raises:
+        RuntimeError: If the intersection has no polygonal area.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _polygonal_geometry(box(0, 0, 1, 1)).geom_type
+        'Polygon'
+    """
+    if isinstance(geometry, (shapely.Polygon, shapely.MultiPolygon)):
+        return geometry
+    parts = [
+        part
+        for part in shapely.get_parts(geometry)
+        if isinstance(part, (shapely.Polygon, shapely.MultiPolygon))
+    ]
+    if not parts:
+        raise RuntimeError("Population footprint intersection has no area.")
+    polygonal = shapely.union_all(parts)
+    if not isinstance(polygonal, (shapely.Polygon, shapely.MultiPolygon)):
+        raise RuntimeError("Population footprint intersection has no polygonal area.")
+    return polygonal
+
+
+def _geodesic_area(geometry: BaseGeometry) -> float:
+    """Return a polygon or multipolygon's physical area on the WGS84 ellipsoid.
+
+    Args:
+        geometry: Polygon or multipolygon in WGS84 longitude and latitude.
+
+    Returns:
+        float: The positive physical area in square meters.
+
+    Raises:
+        ValueError: If a polygon covers half or more of the Earth, which the
+            geodesic area routine cannot measure unambiguously.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _geodesic_area(box(0, 0, 1, 1)) > 0
+        True
+    """
+    normalized = shapely.orient_polygons(_polygonal_geometry(geometry))
+    polygons = (
+        normalized.geoms
+        if isinstance(normalized, shapely.MultiPolygon)
+        else (normalized,)
+    )
+    areas: list[float] = []
+    for polygon in polygons:
+        area, _ = _WGS84_GEOD.geometry_area_perimeter(polygon)
+        if (
+            not np.isfinite(area)
+            or area <= 0
+            or area >= _WGS84_HALF_SURFACE_AREA * (1 - _HALF_SURFACE_TOLERANCE)
+        ):
+            raise ValueError(
+                "population coverage cannot be measured for a polygon that "
+                "covers half or more of the Earth. Split it into smaller "
+                "polygons before assignment."
+            )
+        areas.append(area)
+    return float(sum(areas))
 
 
 def _require_coverage(
@@ -498,21 +684,61 @@ def _reject_overlaps(hazard: gpd.GeoDataFrame) -> None:
             )
 
 
-def _ordered_totals(summary: pd.DataFrame, *, expected_rows: int) -> np.ndarray:
-    """Return exactextract totals in original feature order."""
+def _ordered_totals(
+    summary: pd.DataFrame,
+    *,
+    expected_rows: int,
+    spatial_coverage: np.ndarray,
+) -> np.ndarray:
+    """Return exactextract totals in original feature order.
+
+    Args:
+        summary: ExactExtract output containing one row per hazard feature.
+        expected_rows: Number of requested hazard features.
+        spatial_coverage: Each feature's footprint coverage, already checked to
+            be greater than zero.
+
+    Returns:
+        numpy.ndarray: One finite, non-negative population total per feature.
+
+    Raises:
+        RuntimeError: If ExactExtract returns an incomplete or unusable result.
+
+    Examples:
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> _ordered_totals(
+        ...     pd.DataFrame(
+        ...         {
+        ...             _ROW_ID: [0],
+        ...             "sum": [2.0],
+        ...             "count": [1.0],
+        ...         }
+        ...     ),
+        ...     expected_rows=1,
+        ...     spatial_coverage=np.array([1.0]),
+        ... )
+        array([2.])
+    """
     required = {_ROW_ID, "sum", "count"}
     if not required.issubset(summary.columns) or len(summary) != expected_rows:
         raise RuntimeError("Exactextract returned an unexpected vector result.")
+    if (
+        spatial_coverage.shape != (expected_rows,)
+        or not np.isfinite(spatial_coverage).all()
+        or (spatial_coverage <= 0).any()
+    ):
+        raise RuntimeError("Vector coverage must be checked before population totals.")
     ordered = summary.sort_values(_ROW_ID, kind="stable")
     row_ids = ordered[_ROW_ID].to_numpy(dtype=np.int64)
     if not np.array_equal(row_ids, np.arange(expected_rows, dtype=np.int64)):
         raise RuntimeError("Exactextract did not return every vector feature once.")
-    coverage = ordered["count"].to_numpy(dtype=float, na_value=np.nan)
-    if not np.isfinite(coverage).all() or (coverage <= 0).any():
-        raise ValueError(
-            "Every hazard polygon must overlap at least one valid population cell."
-        )
+    valid_cell_count = ordered["count"].to_numpy(dtype=float, na_value=np.nan)
+    if not np.isfinite(valid_cell_count).all() or (valid_cell_count < 0).any():
+        raise RuntimeError("Exactextract returned an invalid valid-cell count.")
     totals = ordered["sum"].to_numpy(dtype=float, na_value=np.nan)
+    no_valid_cells = valid_cell_count == 0
+    totals = np.where(no_valid_cells, 0.0, totals)
     if not np.isfinite(totals).all():
         raise RuntimeError("Exactextract returned a non-finite population total.")
     if (totals < 0).any():

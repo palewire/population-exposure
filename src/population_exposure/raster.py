@@ -25,12 +25,14 @@ from population_exposure._crs import (
     require_matching_crs,
     transform_geometries,
 )
+from population_exposure._errors import PartialCoverageError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
     from rasterio import CRS, Affine
     from rasterio.coords import BoundingBox
+    from shapely.geometry.base import BaseGeometry
 
 RasterSource: TypeAlias = str | PathLike[str] | DatasetReader
 _DEFAULT_BLOCK_SHAPE = (256, 256)
@@ -126,6 +128,8 @@ def assign_raster_population(
     Raises:
         population_exposure.CrsMismatchError: If the coordinate systems
             differ and reprojection was not allowed.
+        population_exposure.PartialCoverageError: If the hazard raster lies
+            entirely outside the population raster.
         ValueError: If a raster cannot be used, or population is not conserved
             within the allowed difference.
 
@@ -179,11 +183,15 @@ def assign_raster_population(
             population_reader,
             total=source_total,
         )
-        expected_total = _population_in_footprint(
-            population_reader,
+        population_footprint = _footprint_on_population_grid(
             footprint,
-            hazard_crs,
+            population=population_reader,
+            footprint_crs=hazard_crs,
             reprojecting=reprojecting,
+        )
+        _require_raster_overlap(population_footprint, population_reader)
+        expected_total = _population_in_footprint(
+            population_reader, population_footprint
         )
         aligned_total = _aligned_population_total(
             population_reader,
@@ -475,26 +483,94 @@ def raster_footprint(dataset: DatasetReader) -> Polygon:
     )
 
 
-def _population_in_footprint(
-    population: DatasetReader,
+def _footprint_on_population_grid(
     footprint: Polygon,
-    footprint_crs: CRS,
     *,
+    population: DatasetReader,
+    footprint_crs: CRS,
     reprojecting: bool,
-) -> float:
-    """Calculate the exact population covered by the hazard footprint.
-
-    When the coordinate systems differ, the footprint is transformed with
-    enough points along each edge to keep its curved boundary accurate on the
-    population grid. Transforming only its four corners would cut the curve
-    off and undercount the covered population.
+) -> BaseGeometry:
+    """Express a hazard raster footprint on the population raster's grid.
 
     Args:
-        population: The open population raster.
         footprint: The hazard grid footprint, in the hazard coordinate system.
+        population: The open population raster.
         footprint_crs: The hazard coordinate system.
         reprojecting: True when the coordinate systems differ and the caller
             allowed automatic reprojection.
+
+    Returns:
+        shapely.geometry.base.BaseGeometry: The hazard footprint in the
+        population raster's coordinate system.
+
+    Examples:
+        >>> import rasterio
+        >>> from shapely.geometry import box
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     _footprint_on_population_grid(
+        ...         box(0, 0, 1, 1),
+        ...         population=raster,
+        ...         footprint_crs=raster.crs,
+        ...         reprojecting=False,
+        ...     ).geom_type
+        'Polygon'
+    """
+    if not reprojecting:
+        return footprint
+    return transform_geometries(
+        [footprint],
+        source_crs=footprint_crs,
+        target_crs=population.crs,
+        tolerance=boundary_tolerance(population),
+    )[0]
+
+
+def _require_raster_overlap(
+    footprint: BaseGeometry,
+    population: DatasetReader,
+) -> None:
+    """Require the hazard and population raster footprints to share area.
+
+    Args:
+        footprint: Hazard footprint in the population coordinate system.
+        population: The open population raster.
+
+    Returns:
+        None.
+
+    Raises:
+        population_exposure.PartialCoverageError: If the raster footprints do
+            not share any area.
+
+    Examples:
+        >>> import rasterio
+        >>> from shapely.geometry import box
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     _require_raster_overlap(box(0, 0, 1, 1), raster)
+    """
+    overlap = footprint.intersection(raster_footprint(population))
+    if not overlap.is_empty and overlap.area > 0:
+        return
+    hazard_bounds = ", ".join(f"{value:g}" for value in footprint.bounds)
+    population_bounds = ", ".join(f"{value:g}" for value in population.bounds)
+    raise PartialCoverageError(
+        "hazard raster lies entirely outside the population raster. "
+        f"Hazard bounds on the population grid: ({hazard_bounds}); "
+        f"population bounds: ({population_bounds}). Use a population raster "
+        "that overlaps the hazard raster."
+    )
+
+
+def _population_in_footprint(
+    population: DatasetReader,
+    footprint: BaseGeometry,
+) -> float:
+    """Calculate the exact population covered by the hazard footprint.
+
+    Args:
+        population: The open population raster.
+        footprint: The hazard grid footprint, in the population coordinate
+            system.
 
     Returns:
         float: The population covered by the footprint.
@@ -503,20 +579,10 @@ def _population_in_footprint(
         >>> import rasterio
         >>> from shapely.geometry import box
         >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
-        ...     _population_in_footprint(
-        ...         raster, box(0, 0, 1, 1), raster.crs, reprojecting=False
-        ...     )
+        ...     _population_in_footprint(raster, box(0, 0, 1, 1))
         10.0
     """
-    geometry = footprint
-    if reprojecting:
-        geometry = transform_geometries(
-            [footprint],
-            source_crs=footprint_crs,
-            target_crs=population.crs,
-            tolerance=boundary_tolerance(population),
-        )[0]
-    feature = gpd.GeoDataFrame(geometry=[geometry], crs=population.crs)
+    feature = gpd.GeoDataFrame(geometry=[footprint], crs=population.crs)
     summary = exact_extract(population, feature, "sum", output="pandas")
     value = float(summary.loc[0, "sum"])
     if not np.isfinite(value):  # pragma: no cover
