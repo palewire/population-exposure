@@ -26,7 +26,9 @@ license, citation, and download details before anything is downloaded.
 
 Choose first by population meaning and date, then by the quality and detail of
 the source data at your place and the scale of the analysis. A source's output
-grid is not its census precision or a measure of accuracy.
+grid is not its census precision or a measure of accuracy. For GHS-POP, choose
+an epoch close to the hazard date; it estimates residents, not people physically
+present.
 
 The registry does not download LandScan or bypass its license terms. GPW needs
 an Earthdata token. WorldPop, GHSL, and Chambers download from their publishers,

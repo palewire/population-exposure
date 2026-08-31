@@ -231,6 +231,9 @@ GHSL = SourceSpec(
         "resolution.",
         "The catalog includes estimates through 2020; publisher projections for "
         "2025 and 2030 are intentionally excluded.",
+        "GHS-POP allocates residential census and administrative totals using "
+        "built-up data; do not treat it as independent when a hazard model uses "
+        "built-up area.",
     ),
     filename_template="GHS_POP_E{year}_GLOBE_R2023A_54009_1000_V1_0.tif",
     archive_member_template="GHS_POP_E{year}_GLOBE_R2023A_54009_1000_V1_0.tif",

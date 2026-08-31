@@ -169,6 +169,7 @@ def test_list_and_info_expose_verified_source_facts() -> None:
     assert ghsl.meaning == "residential"
     assert ghsl.license.startswith("Creative Commons Attribution")
     assert ghsl.official_url.endswith("_V1_0.zip")
+    assert any("do not treat it as independent" in note for note in ghsl.notes)
     landscan = populations.info("landscan-global:2024")
     assert landscan.meaning == "ambient"
     assert landscan.doi == "10.48690/1532445"
