@@ -129,8 +129,9 @@ and the exact table-coordinate join below.
 
 `assign_population(hazard, population, *, cell_columns=("longitude",
 "latitude"), population_column="population", allow_overlaps=False,
-hazard_band=None, conservation_tolerance=1e-6)` selects the matching behavior
-from the input types.
+allow_reprojection=False, allow_partial_coverage=False, hazard_band=None,
+conservation_tolerance=None)` selects the matching behavior from the input
+types.
 
 | Option | Meaning |
 | --- | --- |
@@ -139,8 +140,10 @@ from the input types.
 | `cell_columns` | One table key column or a sequence of table key columns. It is used only for table assignment. The default is `longitude` and `latitude`. |
 | `population_column` | Name of the new output population column. It defaults to `population` and cannot overwrite an existing hazard column. |
 | `allow_overlaps` | Allows overlapping vector polygons. It is `False` by default because adding independent overlapping totals would count shared areas more than once. It applies only to vector hazards. |
+| `allow_reprojection` | Allows the package to move the hazard onto the population coordinate system for you. It is `False` by default, so a mismatch raises an error instead. It applies to vector and raster hazards. |
+| `allow_partial_coverage` | Allows vector features that reach outside the population raster, and reports how much of each was covered. It is `False` by default, so a partly covered feature raises an error instead. It applies only to vector hazards. |
 | `hazard_band` | A 1-based hazard band number. It is used only for multiband hazard rasters; a one-band raster selects band 1 automatically. |
-| `conservation_tolerance` | The allowed relative difference when a population raster is reprojected onto a hazard raster. It applies only to raster hazards and defaults to `1e-6`. |
+| `conservation_tolerance` | The allowed relative difference when a population raster is aligned onto a hazard raster. It applies only to raster hazards. It defaults to `1e-6` on a shared coordinate system, or `1e-3` when `allow_reprojection=True`. |
 
 Table keys must be complete and unique in both inputs. They are never rounded,
 trimmed, or otherwise normalized. An unmatched hazard row raises an error
@@ -148,6 +151,103 @@ rather than receiving a guessed or missing population value.
 
 Vector inputs must have a coordinate system and valid, non-empty `Polygon` or
 `MultiPolygon` geometry. Each polygon must cover valid population data.
+
+## Coordinate systems
+
+Hazard and population inputs must use the same coordinate system. When they do
+not, assignment stops and explains itself rather than quietly changing your
+boundaries:
+
+```text
+hazard and population coordinate systems do not match: hazard uses EPSG:4326
+and population uses ESRI:54009. Matching coordinate systems are required by
+default because reprojection moves boundaries and can shift population into or
+out of the result. Transform the hazard yourself with
+hazard.to_crs("ESRI:54009") before assignment, or opt in to automatic
+reprojection with pe.assign_population(hazard, population,
+allow_reprojection=True), which adds enough points along every boundary to keep
+curves accurate when the projection changes.
+```
+
+This is strict by default because moving between coordinate systems is a real
+change to the shape being measured, not a formatting detail. A straight line in
+one projection is usually a curve in another. Transforming only a shape's
+corners cuts those curves off, which quietly undercounts people. In testing, a
+plain 40-degree box drawn in longitude and latitude lost about 11 percent of its
+population when its corners alone were moved onto an equal-area Mollweide grid.
+
+Move the hazard yourself when you want full control:
+
+```python
+import population_exposure as pe
+
+aligned = hazard.to_crs("ESRI:54009")
+exposed = pe.assign_population(aligned, population)
+```
+
+Or ask the package to do it:
+
+```python
+import population_exposure as pe
+
+exposed = pe.assign_population(hazard, population, allow_reprojection=True)
+```
+
+Automatic reprojection adds points along every boundary until the moved edge
+sits within a tenth of one population cell of the true curve, so accuracy is
+measured against the grid the population is read from. Holes and multi-part
+shapes are handled the same way. A shape that would wrap around the world
+across the antimeridian, or that reaches outside the area the population
+projection can represent, raises an error instead of being guessed at.
+
+Table assignment matches exact keys and has no coordinate system, so it is not
+affected.
+
+## Population coverage
+
+A vector feature must also sit inside the population raster. If part of it
+reaches beyond the raster's edge, the returned number would silently leave out
+everyone in the missing part, so assignment stops:
+
+```text
+1 hazard feature reaches outside the population raster: 'zone-a' covered 50.0%.
+Complete coverage is required by default because the returned population would
+otherwise leave out everyone in the part of the feature the raster does not
+reach. Clip or revise the geometry so it fits inside the raster, or opt in with
+pe.assign_population(hazard, population, allow_partial_coverage=True), which
+returns the partial total plus the 'population_coverage_fraction' and
+'population_coverage_complete' columns.
+```
+
+Clip or redraw the geometry, or accept the partial answer explicitly:
+
+```python
+import population_exposure as pe
+
+exposed = pe.assign_population(hazard, population, allow_partial_coverage=True)
+print(exposed[["population", "population_coverage_fraction"]])
+```
+
+The opt-in adds two columns, so a partial result is never mistaken for a
+complete one:
+
+| Column | Meaning |
+| --- | --- |
+| `population_coverage_fraction` | The share of the feature's area that sits inside the raster, from 0 to 1. It is measured on the population raster's own grid, after any reprojection, so it matches the area the raster can supply. It is not a share of the Earth's surface. |
+| `population_coverage_complete` | `True` when the share is within `1e-9` of 1. That allowance covers floating-point rounding only, not a real sliver of missing area. |
+
+Coverage is measured against the raster's outer edge. No-data cells inside that
+edge, such as ocean or empty land, still count as covered, so an ordinary
+coastal polygon is not rejected. A feature that falls entirely outside the
+raster is always an error, even with the opt-in.
+
+Longitudes are never wrapped for you. A polygon drawn from 170 to 190 degrees
+is half outside a raster that runs from -180 to 180, and the error says so.
+Shift the longitudes or split the polygon at the antimeridian.
+
+If the hazard also uses a different coordinate system, the coordinate-system
+error comes first. With `allow_reprojection=True`, coverage is measured on the
+correctly transformed shape.
 
 ## Raster results
 
@@ -168,6 +268,26 @@ error when the difference is above:
 ```text
 conservation_tolerance * max(1, covered_population)
 ```
+
+Two rasters that already share a coordinate system are simply regridded, which
+is arithmetic, so the allowed difference is `1e-6`. Warping between coordinate
+systems is not exact: GDAL allocates source cells to destination cells
+approximately, and that difference measured between about `6e-5` and `4e-4` in
+testing. The allowance with `allow_reprojection=True` is therefore `1e-3`,
+which still catches the far larger errors a wrong footprint produces. Very
+coarse population grids, a few hundred cells across, can exceed it; raise
+`conservation_tolerance` yourself for those, and the error message says so.
+
+`attrs` reports what actually happened, so nothing is hidden:
+
+| Key | Meaning |
+| --- | --- |
+| `population_source_total` | Every valid person in the population raster. |
+| `population_covered_total` | The population the hazard footprint covers, measured exactly. |
+| `population_aligned_total` | The population after alignment onto the hazard grid. |
+| `population_conservation_relative_difference` | The difference between the two totals, relative to the covered total. |
+| `population_conservation_tolerance` | The difference that was allowed. |
+| `population_reprojected` | `True` when population was warped from another coordinate system. |
 
 Population outside the hazard footprint and population no-data cells are not
 part of that covered total. Hazard no-data and areas without population remain
@@ -197,7 +317,9 @@ exposed = pe.assign_population(hazard, "population-counts.tif")
 
 The result keeps the original geometry and coordinate system. Population cells
 crossing a polygon boundary are counted by their covered share, so totals can
-be fractional.
+be fractional. Your raster has to use the same coordinate system as the hazard
+and reach past every polygon, or assignment raises an error explaining both the
+manual fix and the matching opt-in.
 
 ## Tabular heat exposure
 
@@ -246,6 +368,10 @@ The public API is intentionally small.
 
 .. autoclass:: population_exposure.RasterAssignment
    :members: read, iter_blocks
+
+.. autoexception:: population_exposure.CrsMismatchError
+
+.. autoexception:: population_exposure.PartialCoverageError
 
 .. automodule:: population_exposure.populations
    :members: list, info, download, register, SourceInfo, SelectionInfo

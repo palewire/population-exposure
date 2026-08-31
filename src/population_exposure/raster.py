@@ -20,6 +20,12 @@ from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 from shapely.geometry import Polygon
 
+from population_exposure._crs import (
+    boundary_tolerance,
+    require_matching_crs,
+    transform_geometries,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
@@ -28,6 +34,12 @@ if TYPE_CHECKING:
 
 RasterSource: TypeAlias = str | PathLike[str] | DatasetReader
 _DEFAULT_BLOCK_SHAPE = (256, 256)
+
+# Aligning two rasters that already share a coordinate system is arithmetic, so
+# only floating-point noise is expected. Warping between coordinate systems
+# carries GDAL's own small allocation difference, measured near 1e-4.
+SAME_CRS_CONSERVATION_TOLERANCE = 1e-6
+CROSS_CRS_CONSERVATION_TOLERANCE = 1e-3
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,14 +101,49 @@ def assign_raster_population(
     *,
     population_column: str,
     hazard_band: int | None,
-    conservation_tolerance: float,
+    conservation_tolerance: float | None,
+    allow_reprojection: bool,
 ) -> RasterAssignment:
-    """Validate rasters and return a lazy population-aligned result."""
+    """Validate rasters and return a lazy population-aligned result.
+
+    Args:
+        hazard: A hazard GeoTIFF path or open Rasterio reader.
+        population: A population-count raster path, an open Rasterio reader, or
+            a catalog selection.
+        population_column: Name recorded for the aligned population values.
+        hazard_band: A one-based hazard band number, or None for a one-band
+            hazard raster.
+        conservation_tolerance: The allowed relative difference between the
+            covered and aligned population totals, or None to use the default
+            for the situation.
+        allow_reprojection: True to warp population from another coordinate
+            system onto the hazard grid automatically.
+
+    Returns:
+        RasterAssignment: A lazy result that reads hazard and aligned
+        population cells together.
+
+    Raises:
+        population_exposure.CrsMismatchError: If the coordinate systems
+            differ and reprojection was not allowed.
+        ValueError: If a raster cannot be used, or population is not conserved
+            within the allowed difference.
+
+    Examples:
+        >>> assign_raster_population(  # doctest: +SKIP
+        ...     "hazard.tif",
+        ...     "population.tif",
+        ...     population_column="population",
+        ...     hazard_band=None,
+        ...     conservation_tolerance=None,
+        ...     allow_reprojection=False,
+        ... )
+    """
     hazard_source = normalize_raster_source(hazard, parameter="hazard")
 
     with open_raster(hazard_source, parameter="hazard") as hazard_reader:
         selected_band = _select_hazard_band(hazard_reader, hazard_band)
-        _validate_raster_grid(hazard_reader, name="hazard")
+        validate_raster_grid(hazard_reader, name="hazard")
         hazard_crs = hazard_reader.crs
         assert hazard_crs is not None
         shape = hazard_reader.shape
@@ -106,7 +153,7 @@ def assign_raster_population(
             hazard_reader.block_shapes[selected_band - 1],
             shape,
         )
-        footprint = _raster_footprint(hazard_reader)
+        footprint = raster_footprint(hazard_reader)
 
     from population_exposure.populations._api import (
         metadata_for_reader,
@@ -119,6 +166,13 @@ def assign_raster_population(
         parameter="population",
     )
     with open_raster(population_source, parameter="population") as population_reader:
+        validate_raster_grid(population_reader, name="population")
+        reprojecting = require_matching_crs(
+            hazard_crs,
+            population_reader.crs,
+            hazard_kind="raster",
+            allow_reprojection=allow_reprojection,
+        )
         source_total = validate_population_raster(population_reader)
         population_metadata = metadata_for_reader(
             resolved_population,
@@ -129,6 +183,7 @@ def assign_raster_population(
             population_reader,
             footprint,
             hazard_crs,
+            reprojecting=reprojecting,
         )
         aligned_total = _aligned_population_total(
             population_reader,
@@ -138,13 +193,29 @@ def assign_raster_population(
             block_shape=block_shape,
         )
 
+    tolerance = resolve_conservation_tolerance(
+        conservation_tolerance,
+        reprojecting=reprojecting,
+    )
     difference = abs(aligned_total - expected_total)
-    allowed_difference = conservation_tolerance * max(1.0, abs(expected_total))
+    scale = max(1.0, abs(expected_total))
+    relative_difference = difference / scale
+    allowed_difference = tolerance * scale
     if difference > allowed_difference:
         raise ValueError(
             "Population was not conserved while aligning to the hazard grid: "
             f"expected {expected_total:.12g}, got {aligned_total:.12g}, "
-            f"difference {difference:.12g} exceeds {allowed_difference:.12g}."
+            f"difference {difference:.12g} exceeds {allowed_difference:.12g} "
+            f"(relative difference {relative_difference:.3g}, allowed "
+            f"{tolerance:.3g})."
+            + (
+                " Warping between coordinate systems has a small difference of "
+                "its own, which grows on coarse population grids. Raise "
+                "conservation_tolerance if this difference is acceptable for "
+                "your analysis."
+                if reprojecting
+                else ""
+            )
         )
 
     attrs: Mapping[str, object] = MappingProxyType(
@@ -154,7 +225,9 @@ def assign_raster_population(
             "population_source_total": source_total,
             "population_covered_total": expected_total,
             "population_aligned_total": aligned_total,
-            "population_conservation_tolerance": conservation_tolerance,
+            "population_conservation_tolerance": tolerance,
+            "population_conservation_relative_difference": relative_difference,
+            "population_reprojected": reprojecting,
             "population_source": population_metadata,
         }
     )
@@ -169,6 +242,43 @@ def assign_raster_population(
         _population=population_source,
         _block_shape=block_shape,
     )
+
+
+def resolve_conservation_tolerance(
+    conservation_tolerance: float | None,
+    *,
+    reprojecting: bool,
+) -> float:
+    """Return the allowed relative difference for a conservation check.
+
+    Same-grid alignment is arithmetic, so it holds to a very small difference.
+    Warping between coordinate systems does not, because GDAL allocates source
+    cells to destination cells approximately. Measured cross-system differences
+    are near ``1e-4`` on ordinary grids, so the default allows ``1e-3``, which
+    still catches the far larger differences a wrong footprint produces.
+
+    Args:
+        conservation_tolerance: An explicit allowance, or None to choose the
+            default for the situation.
+        reprojecting: True when population is warped from another coordinate
+            system.
+
+    Returns:
+        float: The relative difference allowed.
+
+    Examples:
+        >>> resolve_conservation_tolerance(None, reprojecting=False)
+        1e-06
+        >>> resolve_conservation_tolerance(None, reprojecting=True)
+        0.001
+        >>> resolve_conservation_tolerance(0.5, reprojecting=True)
+        0.5
+    """
+    if conservation_tolerance is not None:
+        return float(conservation_tolerance)
+    if reprojecting:
+        return CROSS_CRS_CONSERVATION_TOLERANCE
+    return SAME_CRS_CONSERVATION_TOLERANCE
 
 
 def normalize_raster_source(source: RasterSource, *, parameter: str) -> RasterSource:
@@ -214,7 +324,7 @@ def open_raster(
 
 def validate_population_raster(population: DatasetReader) -> float:
     """Validate a one-band population-count raster and return its total."""
-    _validate_raster_grid(population, name="population")
+    validate_raster_grid(population, name="population")
     if population.count != 1:
         raise ValueError(
             "population raster must contain exactly one count band; "
@@ -243,8 +353,25 @@ def validate_population_raster(population: DatasetReader) -> float:
     return total
 
 
-def _validate_raster_grid(dataset: DatasetReader, *, name: str) -> None:
-    """Validate raster georeferencing and dimensions."""
+def validate_raster_grid(dataset: DatasetReader, *, name: str) -> None:
+    """Validate raster georeferencing and dimensions.
+
+    Args:
+        dataset: An open raster.
+        name: The input name used in error messages, such as ``"hazard"``.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If the raster has no coordinate system, no georeferencing
+            transform, or unusable dimensions or bounds.
+
+    Examples:
+        >>> import rasterio
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     validate_raster_grid(raster, name="population")
+    """
     if dataset.crs is None:
         raise ValueError(f"{name} raster must define a CRS.")
     if dataset.width <= 0 or dataset.height <= 0:  # pragma: no cover
@@ -321,8 +448,22 @@ def _select_hazard_band(
     return requested
 
 
-def _raster_footprint(dataset: DatasetReader) -> Polygon:
-    """Return the exact outer grid footprint, including rotated grids."""
+def raster_footprint(dataset: DatasetReader) -> Polygon:
+    """Return the exact outer grid footprint, including rotated grids.
+
+    Args:
+        dataset: An open raster.
+
+    Returns:
+        shapely.geometry.Polygon: The outer edge of the grid, in the raster's
+        own coordinate system.
+
+    Examples:
+        >>> import rasterio
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     raster_footprint(raster).geom_type
+        'Polygon'
+    """
     transform = dataset.transform
     return Polygon(
         [
@@ -338,11 +479,44 @@ def _population_in_footprint(
     population: DatasetReader,
     footprint: Polygon,
     footprint_crs: CRS,
+    *,
+    reprojecting: bool,
 ) -> float:
-    """Calculate the exact population covered by the hazard footprint."""
-    feature = gpd.GeoDataFrame(geometry=[footprint], crs=footprint_crs)
-    if feature.crs != population.crs:
-        feature = feature.to_crs(population.crs)
+    """Calculate the exact population covered by the hazard footprint.
+
+    When the coordinate systems differ, the footprint is transformed with
+    enough points along each edge to keep its curved boundary accurate on the
+    population grid. Transforming only its four corners would cut the curve
+    off and undercount the covered population.
+
+    Args:
+        population: The open population raster.
+        footprint: The hazard grid footprint, in the hazard coordinate system.
+        footprint_crs: The hazard coordinate system.
+        reprojecting: True when the coordinate systems differ and the caller
+            allowed automatic reprojection.
+
+    Returns:
+        float: The population covered by the footprint.
+
+    Examples:
+        >>> import rasterio
+        >>> from shapely.geometry import box
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     _population_in_footprint(
+        ...         raster, box(0, 0, 1, 1), raster.crs, reprojecting=False
+        ...     )
+        10.0
+    """
+    geometry = footprint
+    if reprojecting:
+        geometry = transform_geometries(
+            [footprint],
+            source_crs=footprint_crs,
+            target_crs=population.crs,
+            tolerance=boundary_tolerance(population),
+        )[0]
+    feature = gpd.GeoDataFrame(geometry=[geometry], crs=population.crs)
     summary = exact_extract(population, feature, "sum", output="pandas")
     value = float(summary.loc[0, "sum"])
     if not np.isfinite(value):  # pragma: no cover

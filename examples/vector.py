@@ -35,3 +35,33 @@ with TemporaryDirectory() as directory:
 
     exposed = pe.assign_population(hazard, population_path)
     print(exposed)
+
+    # A different coordinate system stops the work and explains both routes.
+    other_system = hazard.to_crs("EPSG:4326")
+    try:
+        pe.assign_population(other_system, population_path)
+    except pe.CrsMismatchError as error:
+        print(f"\nStopped: {error}")
+
+    # Ask for it and the package moves the boundaries carefully.
+    reprojected = pe.assign_population(
+        other_system,
+        population_path,
+        allow_reprojection=True,
+    )
+    print(f"\nReprojected totals: {reprojected['population'].tolist()}")
+
+    # A polygon reaching past the raster also stops, for the same reason.
+    reaching = gpd.GeoDataFrame(geometry=[box(1, 0, 4, 2)], crs="EPSG:3857")
+    try:
+        pe.assign_population(reaching, population_path)
+    except pe.PartialCoverageError as error:
+        print(f"\nStopped: {error}")
+
+    partial = pe.assign_population(
+        reaching,
+        population_path,
+        allow_partial_coverage=True,
+    )
+    print("\nPartial result:")
+    print(partial[["population", "population_coverage_fraction"]])
