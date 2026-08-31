@@ -228,6 +228,10 @@ exposed = pe.assign_population(hazard, population, allow_partial_coverage=True)
 print(exposed[["population", "population_coverage_fraction"]])
 ```
 
+`population_coverage_fraction` is an approximate share of physical surface
+area, not a share of the population. Do not use it to scale the partial
+population total.
+
 The opt-in adds two columns, so a partial result is never mistaken for a
 complete one:
 
@@ -235,6 +239,10 @@ complete one:
 | --- | --- |
 | `population_coverage_fraction` | The share of the feature's physical Earth-surface area that sits inside the raster, from 0 to 1. It is not the share of population captured and must not be used to scale or extrapolate the partial population total, because population is not spread evenly. |
 | `population_coverage_complete` | `True` when the share is within `1e-9` of 1. That allowance covers floating-point rounding only, not a real sliver of missing area. |
+
+For geographic coordinates, boundary edges are split into pieces no longer than
+0.1 degrees. This keeps latitude-band area error below `1e-6` relative in the
+validation sweep.
 
 Coverage is measured against the raster's outer edge. No-data cells inside that
 edge, such as ocean or empty land, still count as covered, so an ordinary
