@@ -565,9 +565,16 @@ def _worksheet_rows(
                     raise ValueError(
                         "Workbook shared-string index is invalid."
                     ) from error
+            reference = cell.attrib.get("r")
+            if reference is None:
+                raise ValueError("Workbook cell lacks a coordinate reference.")
             column = "".join(
-                character for character in cell.attrib["r"] if character.isalpha()
+                character for character in reference if character.isalpha()
             )
+            if not column:
+                raise ValueError(
+                    f"Workbook cell has an invalid coordinate reference: {reference!r}."
+                )
             values[column] = value
         yield values
 

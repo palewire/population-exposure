@@ -6,6 +6,7 @@ import json
 import zipfile
 
 import pytest
+from defusedxml import ElementTree
 
 from scripts.regenerate_ghsl_tabular_golden import (
     COUNTRY_STATS_ARCHIVE,
@@ -13,10 +14,34 @@ from scripts.regenerate_ghsl_tabular_golden import (
     NoRedirectHandler,
     _category_for_smod,
     _workbook_header,
+    _worksheet_rows,
     build_fixture,
     extract_member,
     workbook_totals,
 )
+
+
+@pytest.mark.unit
+def test_workbook_cells_require_coordinate_references() -> None:
+    """Report a worksheet cell without a coordinate reference clearly.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_workbook_cells_require_coordinate_references()
+    """
+    namespace = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    sheet = ElementTree.fromstring(
+        b'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        b"<sheetData><row><c><v>value</v></c></row></sheetData></worksheet>"
+    )
+
+    with pytest.raises(ValueError, match="lacks a coordinate reference"):
+        list(_worksheet_rows(sheet, [], namespace))
 
 
 @pytest.mark.unit
