@@ -31,10 +31,10 @@ Do not perform any of the following without explicit human approval:
 
 ### 0.1.0rc1 TestPyPI flow
 
-After approval, tag the merged candidate as `v0.1.0rc1`, then use
+After approval, tag and push the merged candidate as `v0.1.0rc1`, then use
 **Actions > Publish package > Run workflow** with the `testpypi` target and
-the `v0.1.0rc1` ref. The workflow builds and publishes that exact ref to
-TestPyPI.
+the pushed `v0.1.0rc1` ref. The workflow builds and publishes that exact ref
+to TestPyPI.
 
 Install the candidate by pinning its full version, rather than requesting an
 unqualified package name:
