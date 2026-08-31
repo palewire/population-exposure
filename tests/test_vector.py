@@ -12,11 +12,16 @@ import rasterio
 from geopandas.testing import assert_geodataframe_equal
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 import population_exposure as pe
 from population_exposure import assign_population
-from population_exposure.vector import _geodesic_area, _ordered_totals
+from population_exposure.vector import (
+    _densified_ring_vertex_count,
+    _densify_geographic_geometry,
+    _geodesic_area,
+    _ordered_totals,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -422,4 +427,35 @@ def test_no_valid_cells_return_zero_after_spatial_coverage_check() -> None:
 
 def test_geodesic_area_rejects_a_half_earth_polygon() -> None:
     with pytest.raises(ValueError, match="half or more"):
-        _geodesic_area(box(0, -45, 180, 45))
+        _geodesic_area(box(-180, 0, 180, 90))
+
+
+@pytest.mark.parametrize("geometry", [Polygon(), MultiPolygon()])
+def test_geodesic_area_rejects_empty_polygonal_geometry(geometry) -> None:
+    with pytest.raises(ValueError, match="empty WGS84 polygon"):
+        _geodesic_area(geometry)
+
+
+def test_geodesic_area_is_independent_of_ring_orientation() -> None:
+    counterclockwise = box(0, 0, 20, 10)
+    clockwise = Polygon(tuple(reversed(counterclockwise.exterior.coords)))
+
+    assert _geodesic_area(clockwise) == pytest.approx(
+        _geodesic_area(counterclockwise),
+        abs=1e-6,
+    )
+
+
+def test_geodesic_area_densification_bounds_a_world_spanning_ring() -> None:
+    densified = _densify_geographic_geometry(box(-180, -90, 180, 90))
+
+    assert len(densified.exterior.coords) == 10_801
+
+
+def test_geodesic_area_densification_precheck_counts_duplicate_vertices() -> None:
+    geometry = Polygon([(0, 0), (0, 0), (1, 0), (1, 1), (0, 0)])
+
+    densified = _densify_geographic_geometry(geometry)
+
+    assert _densified_ring_vertex_count(geometry.exterior) == 37
+    assert len(densified.exterior.coords) <= 37

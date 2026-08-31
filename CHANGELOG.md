@@ -27,6 +27,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Report `population_coverage_fraction` as a share of physical Earth-surface
   area rather than planar area in the raster's coordinate system. It remains a
   coverage description, not a population multiplier.
+- Split longitude-latitude boundary edges before calculating physical area, so
+  ordinary wide features follow their intended straight raster boundaries.
 - Keep boundaries curved when reprojecting. Vector features and raster
   footprints now gain points along every edge until the moved boundary is
   within a tenth of one population cell of the true curve. Moving only the

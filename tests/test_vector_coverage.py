@@ -20,12 +20,37 @@ if TYPE_CHECKING:
 
 FRACTION = "population_coverage_fraction"
 COMPLETE = "population_coverage_complete"
-GEODESIC_BAND_SHARE = 0.6511126482345896
-GEODESIC_HIGH_LATITUDE_SHARE = 0.7671769664039725
-GEODESIC_MULTIPOLYGON_SHARE = 0.43538408241965043
-GEODESIC_ANTIMERIDIAN_SHARE = 0.4961765226318648
+GEODESIC_BAND_SHARE = 0.6510755654023153
+GEODESIC_HIGH_LATITUDE_SHARE = 0.7671702885835849
+GEODESIC_MULTIPOLYGON_SHARE = 0.4353464995068396
+GEODESIC_ANTIMERIDIAN_SHARE = 0.5
 WEB_MERCATOR_PLANAR_BAND_SHARE = 0.31314967176775305
-SURFACE_COVERAGE_TOLERANCE = 1e-6
+SURFACE_COVERAGE_TOLERANCE = 2e-7
+WGS84_SURFACE_AREA = 510_065_621_724_088.44
+WIDE_BAND_AREA_TOLERANCE = 1e-7
+
+
+@pytest.mark.parametrize(
+    ("bounds", "earth_share"),
+    [
+        ((0, -10, 180, 10), 0.08644762694289501),
+        ((0, -45, 180, 45), 0.35276082556229366),
+        ((0, -10, 360, 10), 0.17289525388579002),
+        ((0, -20, 200, 20), 0.18926068147611713),
+    ],
+    ids=["180-by-20", "180-by-90", "360-by-20", "200-by-40"],
+)
+def test_wide_geographic_bands_match_independent_surface_areas(
+    bounds: tuple[float, float, float, float],
+    earth_share: float,
+) -> None:
+    """Expected shares are independent analytic integrations of the WGS84 surface."""
+    from population_exposure.vector import _geodesic_area
+
+    assert _geodesic_area(box(*bounds)) / WGS84_SURFACE_AREA == pytest.approx(
+        earth_share,
+        abs=WIDE_BAND_AREA_TOLERANCE,
+    )
 
 
 def write_population(
@@ -227,6 +252,26 @@ def test_coverage_fraction_uses_physical_surface_area(tmp_path: Path) -> None:
         GEODESIC_BAND_SHARE, abs=SURFACE_COVERAGE_TOLERANCE
     )
     assert fraction != pytest.approx(0.5, abs=0.01)
+
+
+def test_coverage_fraction_is_half_for_symmetric_longitude_coverage(
+    tmp_path: Path,
+) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 2)),
+        crs="EPSG:4326",
+        transform=from_bounds(0, 0, 10, 10, 2, 2),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[box(0, 0, 20, 10)], crs="EPSG:4326")
+
+    result = pe.assign_population(hazard, population, allow_partial_coverage=True)
+
+    assert result[FRACTION].item() == pytest.approx(
+        0.5,
+        abs=SURFACE_COVERAGE_TOLERANCE,
+        rel=0,
+    )
 
 
 def test_coverage_fraction_is_independent_of_representation(
