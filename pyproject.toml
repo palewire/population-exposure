@@ -14,6 +14,7 @@ dependencies = [
     "pandas>=2.2",
     "platformdirs>=4.3",
     "pyogrio>=0.13.0",
+    "pyproj>=3.6",
     "rasterio>=1.4.4,<1.5",
     "shapely>=2.1.0",
 ]

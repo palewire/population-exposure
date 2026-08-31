@@ -88,6 +88,8 @@ def test_same_grid_returns_lazy_aligned_result(tmp_path: Path) -> None:
         "population_covered_total": 10.0,
         "population_aligned_total": 10.0,
         "population_conservation_tolerance": 1e-6,
+        "population_conservation_relative_difference": 0.0,
+        "population_reprojected": False,
     }
     assert result.attrs["population_source"]["source_id"] == "custom"
     assert len(result.attrs["population_source"]["local_sha256"]) == 64
@@ -108,10 +110,11 @@ def test_different_crs_and_resolution_preserve_counts(tmp_path: Path) -> None:
         nodata=-32768,
     )
 
-    result = assign_population(hazard, population)
+    result = assign_population(hazard, population, allow_reprojection=True)
     hazard_values, aligned = result.read()
 
     assert hazard_values.shape == aligned.shape == (4, 4)
+    assert result.attrs["population_reprojected"] is True
     assert float(aligned.sum()) == pytest.approx(10.0, rel=1e-12)
     assert result.attrs["population_covered_total"] == pytest.approx(10.0)
     assert result.attrs["population_aligned_total"] == pytest.approx(10.0)

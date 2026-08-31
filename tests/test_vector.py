@@ -89,6 +89,8 @@ def test_vector_assignment_preserves_features_and_fractional_coverage(
         "population_crs": "EPSG:3857",
         "population_band": 1,
         "overlaps_allowed": False,
+        "reprojected": False,
+        "partial_coverage_allowed": False,
     }
 
 
@@ -135,7 +137,7 @@ def test_exactextract_fractional_coverage_golden(tmp_path: Path) -> None:
     assert result.attrs["population_assignment"]["method"] == "exactextract_sum"
 
 
-def test_vector_is_reprojected_without_mutating_input(tmp_path: Path) -> None:
+def test_opted_in_reprojection_does_not_mutate_the_input(tmp_path: Path) -> None:
     bounds = transform_bounds("EPSG:4326", "EPSG:3857", 0, 0, 2, 2)
     population = write_population(
         tmp_path / "population.tif",
@@ -148,10 +150,11 @@ def test_vector_is_reprojected_without_mutating_input(tmp_path: Path) -> None:
     )
     original = hazard.copy(deep=True)
 
-    result = assign_population(hazard, population)
+    result = assign_population(hazard, population, allow_reprojection=True)
 
     assert result["population"].tolist() == pytest.approx([4.0, 6.0])
     assert result.crs == hazard.crs
+    assert result.attrs["population_assignment"]["reprojected"] is True
     assert_geodataframe_equal(hazard, original)
 
 
@@ -245,7 +248,9 @@ def test_polygon_outside_population_coverage_fails(tmp_path: Path) -> None:
     population = write_population(tmp_path / "population.tif")
     hazard = gpd.GeoDataFrame(geometry=[box(10, 10, 11, 11)], crs="EPSG:3857")
 
-    with pytest.raises(ValueError, match="overlap at least one valid population cell"):
+    with pytest.raises(
+        pe.PartialCoverageError, match="entirely outside the population raster"
+    ):
         assign_population(hazard, population)
 
 
