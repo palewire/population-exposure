@@ -27,7 +27,6 @@ HazardKind = Literal["vector", "raster"]
 
 _MAX_REFINEMENTS = 16
 _CELL_FRACTION = 0.1
-_HALF_TURN_DEGREES = 180.0
 
 _MANUAL_GUIDANCE: dict[HazardKind, str] = {
     "vector": (
@@ -212,13 +211,13 @@ def transform_geometries(
     source = as_crs(source_crs, parameter="source")
     target = as_crs(target_crs, parameter="target")
     transformer = Transformer.from_crs(source, target, always_xy=True)
-    geographic = bool(target.is_geographic)
+    half_turn = _longitude_half_turn(target, parameter="target")
     return [
         _transform_geometry(
             geometry,
             transformer=transformer,
             tolerance=tolerance,
-            geographic=geographic,
+            half_turn=half_turn,
         )
         for geometry in geometries
     ]
@@ -239,8 +238,8 @@ def reject_wrapped_geometries(
         None.
 
     Raises:
-        CrsMismatchError: If a geographic polygon ring has neighboring
-            longitudes more than 180 degrees apart.
+        ValueError: If a geographic polygon ring has neighboring longitudes
+            more than half a turn apart, or its longitude unit is unavailable.
 
     Examples:
         >>> from shapely.geometry import box
@@ -249,8 +248,9 @@ def reject_wrapped_geometries(
         ...     hazard_crs="EPSG:4326",
         ... )
     """
-    geographic = bool(as_crs(hazard_crs, parameter="hazard").is_geographic)
-    if not geographic:
+    crs = as_crs(hazard_crs, parameter="hazard")
+    half_turn = _longitude_half_turn(crs, parameter="hazard")
+    if half_turn is None:
         return
     for geometry in geometries:
         polygons = (
@@ -259,13 +259,68 @@ def reject_wrapped_geometries(
         for polygon in polygons:
             _reject_wrapped(
                 np.asarray(polygon.exterior.coords, dtype=float),
-                geographic=True,
+                half_turn=half_turn,
+                error_type=ValueError,
             )
             for interior in polygon.interiors:
                 _reject_wrapped(
                     np.asarray(interior.coords, dtype=float),
-                    geographic=True,
+                    half_turn=half_turn,
+                    error_type=ValueError,
                 )
+
+
+def _longitude_half_turn(crs: CRS, *, parameter: str) -> float | None:
+    """Return half a turn in a geographic CRS's longitude unit.
+
+    Args:
+        crs: The parsed coordinate system.
+        parameter: Input name used in error messages.
+
+    Returns:
+        float | None: Half a turn in longitude coordinate units, or None for a
+            non-geographic coordinate system.
+
+    Raises:
+        ValueError: If a geographic CRS does not identify one usable longitude
+            axis and angular unit.
+
+    Examples:
+        >>> _longitude_half_turn(CRS.from_epsg(4326), parameter="hazard")
+        180.0
+        >>> _longitude_half_turn(CRS.from_epsg(4807), parameter="hazard")
+        200.0
+    """
+    if not crs.is_geographic:
+        return None
+    longitude_axes = [
+        axis
+        for axis in crs.axis_info
+        if isinstance(axis.direction, str)
+        and axis.direction.lower() in {"east", "west"}
+    ]
+    if len(longitude_axes) != 1:
+        raise ValueError(
+            f"{parameter} geographic CRS must define exactly one east-west "
+            "longitude axis so antimeridian crossings can be checked."
+        )
+    radians_per_unit = longitude_axes[0].unit_conversion_factor
+    if (
+        radians_per_unit is None
+        or not math.isfinite(radians_per_unit)
+        or radians_per_unit <= 0
+    ):
+        raise ValueError(
+            f"{parameter} geographic CRS longitude axis must define a positive "
+            "finite angular unit conversion so antimeridian crossings can be checked."
+        )
+    half_turn = math.pi / radians_per_unit
+    if not math.isfinite(half_turn) or half_turn <= 0:  # pragma: no cover
+        raise ValueError(
+            f"{parameter} geographic CRS longitude angular unit does not produce "
+            "a usable half-turn value."
+        )
+    return half_turn
 
 
 def _crs_name(crs: CRS) -> str:
@@ -293,7 +348,7 @@ def _transform_geometry(
     *,
     transformer: Transformer,
     tolerance: float,
-    geographic: bool,
+    half_turn: float | None,
 ) -> BaseGeometry:
     """Transform one polygon or multipolygon.
 
@@ -301,8 +356,8 @@ def _transform_geometry(
         geometry: The ``Polygon`` or ``MultiPolygon`` to transform.
         transformer: The prepared PROJ transformer.
         tolerance: The allowed distance from the true curve, in target units.
-        geographic: True when the target coordinate system uses longitude and
-            latitude.
+        half_turn: Half a turn in target longitude units, or None when the
+            target coordinate system is non-geographic.
 
     Returns:
         shapely.geometry.base.BaseGeometry: The transformed geometry.
@@ -318,7 +373,7 @@ def _transform_geometry(
         ...     box(0, 0, 1, 1),
         ...     transformer=transformer,
         ...     tolerance=1.0,
-        ...     geographic=False,
+        ...     half_turn=None,
         ... ).geom_type
         'Polygon'
     """
@@ -329,7 +384,7 @@ def _transform_geometry(
                     part,
                     transformer=transformer,
                     tolerance=tolerance,
-                    geographic=geographic,
+                    half_turn=half_turn,
                 )
                 for part in geometry.geoms
             ]
@@ -339,7 +394,7 @@ def _transform_geometry(
             geometry,
             transformer=transformer,
             tolerance=tolerance,
-            geographic=geographic,
+            half_turn=half_turn,
         )
     raise CrsMismatchError(  # pragma: no cover
         "Only Polygon and MultiPolygon geometry can be reprojected; got "
@@ -352,7 +407,7 @@ def _transform_polygon(
     *,
     transformer: Transformer,
     tolerance: float,
-    geographic: bool,
+    half_turn: float | None,
 ) -> shapely.Polygon:
     """Transform a polygon's outer boundary and every hole it contains.
 
@@ -360,8 +415,8 @@ def _transform_polygon(
         polygon: The polygon to transform.
         transformer: The prepared PROJ transformer.
         tolerance: The allowed distance from the true curve, in target units.
-        geographic: True when the target coordinate system uses longitude and
-            latitude.
+        half_turn: Half a turn in target longitude units, or None when the
+            target coordinate system is non-geographic.
 
     Returns:
         shapely.Polygon: The transformed polygon, holes included.
@@ -377,7 +432,7 @@ def _transform_polygon(
         ...     box(0, 0, 1, 1),
         ...     transformer=transformer,
         ...     tolerance=1.0,
-        ...     geographic=False,
+        ...     half_turn=None,
         ... ).is_valid
         True
     """
@@ -385,14 +440,14 @@ def _transform_polygon(
         np.asarray(polygon.exterior.coords, dtype=float),
         transformer=transformer,
         tolerance=tolerance,
-        geographic=geographic,
+        half_turn=half_turn,
     )
     holes = [
         _transform_ring(
             np.asarray(interior.coords, dtype=float),
             transformer=transformer,
             tolerance=tolerance,
-            geographic=geographic,
+            half_turn=half_turn,
         )
         for interior in polygon.interiors
     ]
@@ -404,7 +459,7 @@ def _transform_ring(
     *,
     transformer: Transformer,
     tolerance: float,
-    geographic: bool,
+    half_turn: float | None,
 ) -> np.ndarray:
     """Transform one closed ring, adding points where the boundary curves.
 
@@ -418,8 +473,8 @@ def _transform_ring(
             last points are the same.
         transformer: The prepared PROJ transformer.
         tolerance: The allowed distance from the true curve, in target units.
-        geographic: True when the target coordinate system uses longitude and
-            latitude.
+        half_turn: Half a turn in target longitude units, or None when the
+            target coordinate system is non-geographic.
 
     Returns:
         numpy.ndarray: An ``(m, 2)`` array of transformed ring coordinates,
@@ -434,7 +489,7 @@ def _transform_ring(
         >>> transformer = Transformer.from_crs("EPSG:4326", "EPSG:4326", always_xy=True)
         >>> ring = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]])
         >>> _transform_ring(
-        ...     ring, transformer=transformer, tolerance=1.0, geographic=True
+        ...     ring, transformer=transformer, tolerance=1.0, half_turn=180.0
         ... ).shape
         (4, 2)
     """
@@ -454,13 +509,21 @@ def _transform_ring(
             target_points, positions, transformed_middles[needed], axis=0
         )
     else:
-        _reject_wrapped(target_points, geographic=geographic)
+        _reject_wrapped(
+            target_points,
+            half_turn=half_turn,
+            error_type=CrsMismatchError,
+        )
         raise CrsMismatchError(
             "hazard boundary could not be transformed accurately enough for "
             "the population grid. Transform the hazard yourself, or simplify "
             "geometry that touches the edge of a projection."
         )
-    _reject_wrapped(target_points, geographic=geographic)
+    _reject_wrapped(
+        target_points,
+        half_turn=half_turn,
+        error_type=CrsMismatchError,
+    )
     return target_points
 
 
@@ -497,30 +560,41 @@ def _transform_points(points: np.ndarray, transformer: Transformer) -> np.ndarra
     return transformed
 
 
-def _reject_wrapped(points: np.ndarray, *, geographic: bool) -> None:
+def _reject_wrapped(
+    points: np.ndarray,
+    *,
+    half_turn: float | None,
+    error_type: type[ValueError],
+) -> None:
     """Reject a boundary that jumps across the antimeridian.
 
     Args:
         points: An ``(n, 2)`` array of transformed ring coordinates.
-        geographic: True when the coordinates are longitude and latitude.
+        half_turn: Half a turn in longitude coordinate units, or None when the
+            coordinates are non-geographic.
+        error_type: ValueError subclass to raise for a wrapped boundary.
 
     Returns:
         None.
 
     Raises:
-        CrsMismatchError: If two neighboring points are more than 180 degrees
-            of longitude apart, which means the boundary wrapped around the
-            world instead of crossing the antimeridian.
+        ValueError: If two neighboring points are more than half a turn apart,
+            which means the boundary wrapped around the world instead of
+            crossing the antimeridian.
 
     Examples:
-        >>> _reject_wrapped(np.array([[0.0, 0.0], [1.0, 1.0]]), geographic=True)
+        >>> _reject_wrapped(
+        ...     np.array([[0.0, 0.0], [1.0, 1.0]]),
+        ...     half_turn=180.0,
+        ...     error_type=ValueError,
+        ... )
     """
-    if not geographic or len(points) < 2:
+    if half_turn is None or len(points) < 2:
         return
     steps = np.abs(np.diff(points[:, 0]))
-    if (steps > _HALF_TURN_DEGREES).any():
-        raise CrsMismatchError(
+    if (steps > math.nextafter(half_turn, math.inf)).any():
+        raise error_type(
             "hazard geometry has an unsplit boundary edge crossing the "
             "antimeridian, so it would wrap the long way around the world. "
-            "Split the geometry at 180 degrees longitude before assignment."
+            "Split the geometry at the antimeridian before assignment."
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import geopandas as gpd
 import numpy as np
@@ -185,12 +186,13 @@ def test_same_crs_unsplit_antimeridian_polygon_is_rejected(tmp_path: Path) -> No
     unsafe_total = exact_extract(population, hazard, "sum")[0]["properties"]["sum"]
     assert unsafe_total == pytest.approx(8 * (340 / 360))
 
-    with pytest.raises(pe.CrsMismatchError) as caught:
+    with pytest.raises(ValueError, match="antimeridian") as caught:
         assign_population(hazard, population)
 
+    assert not isinstance(caught.value, pe.CrsMismatchError)
     message = str(caught.value)
     assert "antimeridian" in message
-    assert "Split the geometry at 180 degrees longitude before assignment" in message
+    assert "Split the geometry at the antimeridian before assignment" in message
 
 
 @pytest.mark.parametrize(
@@ -233,6 +235,75 @@ def test_valid_antimeridian_representations_are_preserved(
     result = assign_population(hazard, population)
 
     assert result["population"].item() == pytest.approx(8 * (20 / 360))
+
+
+def test_wrapped_geographic_source_is_rejected_before_reprojection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a wrapped source ring before transforming it.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+        monkeypatch: Pytest helper for replacing the transform function.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k before_reprojection``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:3857",
+        transform=from_bounds(-20_000_000, -1_000_000, 20_000_000, 1_000_000, 4, 2),
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[Polygon([(170, -5), (-170, -5), (-170, 5), (170, 5), (170, -5)])],
+        crs="EPSG:4326",
+    )
+
+    transform = Mock(
+        side_effect=AssertionError("wrapped source geometry reached reprojection")
+    )
+    monkeypatch.setattr(vector, "transform_geometries", transform)
+
+    with pytest.raises(ValueError, match="antimeridian") as caught:
+        assign_population(hazard, population, allow_reprojection=True)
+
+    assert not isinstance(caught.value, pe.CrsMismatchError)
+    transform.assert_not_called()
+
+
+@pytest.mark.parametrize("right", [190, 200], ids=["under-half-turn", "half-turn"])
+def test_geographic_wrap_limit_uses_crs_angular_units(
+    tmp_path: Path,
+    right: int,
+) -> None:
+    """Accept valid grad edges up to exactly half a turn.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+        right: Polygon's eastern edge in grads.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k angular_units``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:4807",
+        transform=from_bounds(0, 0, 200, 10, 4, 2),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[box(0, 0, right, 10)], crs="EPSG:4807")
+
+    result = assign_population(hazard, population)
+
+    assert result["population"].item() == pytest.approx(8 * right / 200)
 
 
 def test_opted_in_reprojection_does_not_mutate_the_input(tmp_path: Path) -> None:

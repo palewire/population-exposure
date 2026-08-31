@@ -247,11 +247,12 @@ Automatic vector reprojection adds points along every boundary until the moved
 sits within a tenth of one population cell of the true curve, so accuracy is
 measured against the grid the population is read from. Holes and multi-part
 shapes are handled the same way. In any geographic coordinate system, an
-unsplit boundary edge that jumps more than 180 degrees across the antimeridian
-raises an error instead of being read as the long way around the world. Split
-the polygon at 180 degrees longitude; the package does not guess or rewrite the
-input. A shape that reaches outside the area the population projection can
-represent also raises an error.
+unsplit boundary edge that jumps more than half a turn across the antimeridian
+raises an error instead of being read as the long way around the world. The
+half-turn limit is read from that coordinate system's angular unit, such as 180
+degrees or 200 grads. Split the polygon at the antimeridian; the package does
+not guess or rewrite the input. A shape that reaches outside the area the
+population projection can represent also raises an error.
 
 For rasters, automatic reprojection warps the population to the hazard grid:
 
