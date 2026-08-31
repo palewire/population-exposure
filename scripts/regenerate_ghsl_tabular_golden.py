@@ -602,7 +602,7 @@ def build_fixture(
         rows, fixture_totals, grid = _aruba_rows(smod_path, population_path, geometry)
     _write_rows(cells_path, rows)
     workbook_global = {
-        category: sum(country[category] for country in workbook.values())
+        category: sum(country.get(category, 0.0) for country in workbook.values())
         for category in L1_CODES
     }
     metadata = {
