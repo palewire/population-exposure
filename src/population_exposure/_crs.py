@@ -224,6 +224,47 @@ def transform_geometries(
     ]
 
 
+def reject_wrapped_geometries(
+    geometries: Iterable[BaseGeometry],
+    *,
+    crs: object,
+) -> None:
+    """Reject polygon rings with an unsplit antimeridian edge.
+
+    Args:
+        geometries: ``Polygon`` or ``MultiPolygon`` geometry written in ``crs``.
+        crs: The coordinate system of the geometries.
+
+    Returns:
+        None.
+
+    Raises:
+        CrsMismatchError: If a geographic polygon ring has neighboring
+            longitudes more than 180 degrees apart.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> reject_wrapped_geometries([box(0, 0, 1, 1)], crs="EPSG:4326")
+    """
+    geographic = bool(as_crs(crs, parameter="hazard").is_geographic)
+    if not geographic:
+        return
+    for geometry in geometries:
+        polygons = (
+            geometry.geoms if isinstance(geometry, shapely.MultiPolygon) else [geometry]
+        )
+        for polygon in polygons:
+            _reject_wrapped(
+                np.asarray(polygon.exterior.coords, dtype=float),
+                geographic=True,
+            )
+            for interior in polygon.interiors:
+                _reject_wrapped(
+                    np.asarray(interior.coords, dtype=float),
+                    geographic=True,
+                )
+
+
 def _crs_name(crs: CRS) -> str:
     """Return a short, readable name for a coordinate system.
 
@@ -476,7 +517,7 @@ def _reject_wrapped(points: np.ndarray, *, geographic: bool) -> None:
     steps = np.abs(np.diff(points[:, 0]))
     if (steps > _HALF_TURN_DEGREES).any():
         raise CrsMismatchError(
-            "hazard geometry crosses the antimeridian once transformed, so its "
-            "boundary would wrap the long way around the world. Split the "
-            "geometry at 180 degrees longitude before assignment."
+            "hazard geometry has an unsplit boundary edge crossing the "
+            "antimeridian, so it would wrap the long way around the world. "
+            "Split the geometry at 180 degrees longitude before assignment."
         )

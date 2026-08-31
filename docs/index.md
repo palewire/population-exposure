@@ -244,10 +244,14 @@ exposed = pe.assign_population(hazard, population, allow_reprojection=True)
 ```
 
 Automatic vector reprojection adds points along every boundary until the moved
-edge sits within a tenth of one population cell of the true curve. Holes and
-multi-part shapes are handled the same way. A shape that would wrap around the
-world across the antimeridian, or that reaches outside the area the population
-projection can represent, raises an error instead of being guessed at.
+sits within a tenth of one population cell of the true curve, so accuracy is
+measured against the grid the population is read from. Holes and multi-part
+shapes are handled the same way. In any geographic coordinate system, an
+unsplit boundary edge that jumps more than 180 degrees across the antimeridian
+raises an error instead of being read as the long way around the world. Split
+the polygon at 180 degrees longitude; the package does not guess or rewrite the
+input. A shape that reaches outside the area the population projection can
+represent also raises an error.
 
 For rasters, automatic reprojection warps the population to the hazard grid:
 
@@ -317,9 +321,10 @@ share cannot be measured for a polygon that covers half or more of the Earth,
 or is too close to that limit to measure reliably; split it into smaller
 polygons first.
 
-Longitudes are never wrapped for you. A polygon drawn from 170 to 190 degrees
-is half outside a raster that runs from -180 to 180, and the error says so.
-Shift the longitudes or split the polygon at the antimeridian.
+Longitudes are never wrapped for you. A polygon drawn from 170 to -170 degrees
+must be split at the antimeridian or written as 170 to 190 degrees on a raster
+that supports that unwrapped range. On a raster that runs from -180 to 180, a
+170-to-190-degree polygon is half outside the raster and the error says so.
 
 If the hazard also uses a different coordinate system, the coordinate-system
 error comes first. With `allow_reprojection=True`, coverage is measured on the

@@ -15,6 +15,7 @@ from pyproj import CRS, Geod
 from population_exposure._crs import (
     as_crs,
     boundary_tolerance,
+    reject_wrapped_geometries,
     require_matching_crs,
     transform_geometries,
 )
@@ -147,16 +148,16 @@ def assign_vector_population(
             hazard_kind="vector",
             allow_reprojection=allow_reprojection,
         )
+        geometries = _geometries_on_population_grid(
+            source,
+            population_reader,
+            reprojecting=reprojecting,
+        )
         population_total = validate_population_raster(population_reader)
         population_metadata = metadata_for_reader(
             resolved_population,
             population_reader,
             total=population_total,
-        )
-        geometries = _geometries_on_population_grid(
-            source,
-            population_reader,
-            reprojecting=reprojecting,
         )
         coverage = _coverage_fractions(geometries, population_reader)
         _require_coverage(
@@ -321,6 +322,7 @@ def _geometries_on_population_grid(
     """
     geometries = list(hazard.geometry.to_numpy())
     if not reprojecting:
+        reject_wrapped_geometries(geometries, crs=population.crs)
         return cast("list[BaseGeometry]", geometries)
     return transform_geometries(
         geometries,

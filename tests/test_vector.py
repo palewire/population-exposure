@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import rasterio
+from exactextract import exact_extract
 from geopandas.testing import assert_geodataframe_equal
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
@@ -154,6 +155,84 @@ def test_exactextract_fractional_coverage_golden(tmp_path: Path) -> None:
     # This is far below one person and only accommodates floating-point addition.
     assert result["population"].item() == pytest.approx(20.0, rel=0, abs=1e-9)
     assert result.attrs["population_assignment"]["method"] == "exactextract_sum"
+
+
+def test_same_crs_unsplit_antimeridian_polygon_is_rejected(tmp_path: Path) -> None:
+    """Reproduce the old total before checking the safe public behavior.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k same_crs_unsplit``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:4326",
+        transform=from_bounds(-180, -10, 180, 10, 4, 2),
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[
+            Polygon([(170, -10), (-170, -10), (-170, 10), (170, 10), (170, -10)])
+        ],
+        crs="EPSG:4326",
+    )
+
+    unsafe_total = exact_extract(population, hazard, "sum")[0]["properties"]["sum"]
+    assert unsafe_total == pytest.approx(8 * (340 / 360))
+
+    with pytest.raises(pe.CrsMismatchError) as caught:
+        assign_population(hazard, population)
+
+    message = str(caught.value)
+    assert "antimeridian" in message
+    assert "Split the geometry at 180 degrees longitude before assignment" in message
+
+
+@pytest.mark.parametrize(
+    ("bounds", "geometry"),
+    [
+        (
+            (-180, -10, 180, 10),
+            MultiPolygon([box(170, -10, 180, 10), box(-180, -10, -170, 10)]),
+        ),
+        ((0, -10, 360, 10), box(170, -10, 190, 10)),
+    ],
+    ids=["split-antimeridian", "unwrapped-domain"],
+)
+def test_valid_antimeridian_representations_are_preserved(
+    tmp_path: Path,
+    bounds: tuple[int, int, int, int],
+    geometry: Polygon | MultiPolygon,
+) -> None:
+    """Keep the intended short span for valid longitude representations.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+        bounds: Bounds of the supported longitude domain.
+        geometry: A split or unwrapped-domain polygon.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k valid_antimeridian``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:4326",
+        transform=from_bounds(*bounds, 4, 2),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[geometry], crs="EPSG:4326")
+
+    result = assign_population(hazard, population)
+
+    assert result["population"].item() == pytest.approx(8 * (20 / 360))
 
 
 def test_opted_in_reprojection_does_not_mutate_the_input(tmp_path: Path) -> None:
