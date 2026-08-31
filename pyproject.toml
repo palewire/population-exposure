@@ -48,6 +48,7 @@ dev = [
     "check-wheel-contents",
     "deptry",
     "pre-commit",
+    "pytest>=9.1.1",
     "ruff",
     "twine",
     "ty",
