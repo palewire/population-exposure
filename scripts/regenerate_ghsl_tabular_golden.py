@@ -80,12 +80,15 @@ WORKBOOK_COLUMNS = (
     "2025",
     "2030",
 )
-WORKBOOK_COLUMN_LETTERS = tuple(chr(ord("A") + index) for index in range(16))
+WORKBOOK_COLUMN_LETTERS = tuple(
+    chr(ord("A") + index) for index in range(len(WORKBOOK_COLUMNS))
+)
 L1_CODES = {
     "UC": (30,),
     "UCL": (21, 22, 23),
     "RUR": (11, 12, 13),
 }
+EXCLUDED_SMOD_CLASSES = frozenset({-200, 10})
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,7 +301,9 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
         try:
             workbook_info = archive.getinfo(WORKBOOK_MEMBER)
         except KeyError as error:
-            raise ValueError("Archive lacks the COUNTRY-STATS workbook.") from error
+            raise ValueError(
+                f"Archive lacks required member: {WORKBOOK_MEMBER}"
+            ) from error
         if workbook_info.file_size > 1_000_000:
             raise ValueError("Workbook exceeds its expected extraction limit.")
         workbook_bytes = archive.read(workbook_info)
@@ -329,11 +334,7 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
         strings = _shared_strings(archive, namespace)
         sheet = ElementTree.fromstring(archive.read(f"xl/{target_path}"))
     rows = list(_worksheet_rows(sheet, strings, namespace))
-    if (
-        not rows
-        or tuple(rows[0].get(column) for column in WORKBOOK_COLUMN_LETTERS)
-        != WORKBOOK_COLUMNS
-    ):
+    if not rows or _workbook_header(rows[0]) != WORKBOOK_COLUMNS:
         raise ValueError("Workbook POP_L1 columns changed.")
     totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for row in rows[1:]:
@@ -341,6 +342,11 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
         if category in L1_CODES:
             totals[row["B"]][category] += float(row["N"])
     return {country: dict(values) for country, values in totals.items()}
+
+
+def _workbook_header(row: dict[str, str]) -> tuple[str, ...]:
+    """Return the POP_L1 header in canonical spreadsheet column order."""
+    return tuple(row.get(column, "") for column in WORKBOOK_COLUMN_LETTERS)
 
 
 def _shared_strings(archive: zipfile.ZipFile, namespace: dict[str, str]) -> list[str]:
@@ -610,17 +616,9 @@ def _aruba_rows(
                     "Aruba GHS-POP values must be finite and non-negative."
                 )
             code = int(classes[row, column])
-            category = code_categories.get(code)
+            category = _category_for_smod(code, value, code_categories)
             if category is None:
-                if code == 0:
-                    if value != 0:
-                        raise ValueError(
-                            "Unclassified Aruba SMOD cells have non-zero population."
-                        )
-                    continue
-                if code in {-200, 10}:
-                    continue
-                raise ValueError(f"Unexpected SMOD class in Aruba: {code}")
+                continue
             longitude, latitude = transform * (int(column) + 0.5, int(row) + 0.5)
             rows.append(
                 {
@@ -640,6 +638,22 @@ def _aruba_rows(
             "selected_cells": len(rows),
         }
     return rows, dict(totals), grid
+
+
+def _category_for_smod(
+    code: int, value: float, code_categories: dict[int, str]
+) -> str | None:
+    """Return the fixture category, skip excluded classes, or reject unknowns."""
+    category = code_categories.get(code)
+    if category is not None:
+        return category
+    if code == 0:
+        if value != 0:
+            raise ValueError("Unclassified Aruba SMOD cells have non-zero population.")
+        return None
+    if code in EXCLUDED_SMOD_CLASSES:
+        return None
+    raise ValueError(f"Unexpected SMOD class in Aruba: {code}")
 
 
 def geometry_bounds(geometry: dict[str, object]) -> tuple[float, float, float, float]:

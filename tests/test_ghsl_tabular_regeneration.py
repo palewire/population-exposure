@@ -1,0 +1,61 @@
+"""Unit coverage for the GHSL tabular fixture regeneration helpers."""
+
+from __future__ import annotations
+
+import zipfile
+
+import pytest
+
+from scripts.regenerate_ghsl_tabular_golden import (
+    WORKBOOK_COLUMNS,
+    _category_for_smod,
+    _workbook_header,
+    workbook_totals,
+)
+
+
+@pytest.mark.unit
+def test_workbook_header_uses_column_letters_not_dict_insertion_order() -> None:
+    row = {
+        "D": "DEGURBA_L1",
+        "B": "GADM_ISO",
+        "A": "GADM_ID",
+        "C": "GADM_NAME",
+        "P": "2030",
+        "O": "2025",
+        "N": "2020",
+        "M": "2015",
+        "L": "2010",
+        "K": "2005",
+        "J": "2000",
+        "I": "1995",
+        "H": "1990",
+        "G": "1985",
+        "F": "1980",
+        "E": "1975",
+    }
+
+    assert _workbook_header(row) == WORKBOOK_COLUMNS
+
+
+@pytest.mark.unit
+def test_workbook_totals_requires_the_expected_workbook_member(tmp_path) -> None:
+    archive_path = tmp_path / "country-stats.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("not-the-workbook.txt", "missing")
+
+    with pytest.raises(ValueError, match="Archive lacks required member"):
+        workbook_totals(archive_path)
+
+
+@pytest.mark.unit
+def test_category_for_smod_skips_unclassified_zero() -> None:
+    assert _category_for_smod(0, 0.0, {30: "UC"}) is None
+
+
+@pytest.mark.unit
+def test_category_for_smod_rejects_nonzero_unclassified_population() -> None:
+    with pytest.raises(
+        ValueError, match="Unclassified Aruba SMOD cells have non-zero population"
+    ):
+        _category_for_smod(0, 1.0, {30: "UC"})
