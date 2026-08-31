@@ -71,7 +71,8 @@ test: ## Run tests serially
 test-serial: test ## Run tests without parallel workers
 
 minimum-dependency-check: ## Run tests with the lowest compatible direct dependencies
-	@temp_dir=$$(mktemp -d); trap 'rm -rf "$$temp_dir"' EXIT; \
+	@set -eu; \
+	temp_dir=$$(mktemp -d); trap 'rm -rf "$$temp_dir"' EXIT; \
 	python_version="$(if $(UV_PYTHON),$(UV_PYTHON),3.11)"; \
 	$(UV) venv --python "$$python_version" "$$temp_dir/venv"; \
 	$(UV) pip install --python "$$temp_dir/venv/bin/python" --resolution lowest-direct --editable .; \

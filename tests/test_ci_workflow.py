@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -24,8 +25,17 @@ def test_ci_checks_minimum_dependencies_on_python_311() -> None:
         Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
     ).read_text(encoding="utf-8")
 
-    assert "test-minimum-dependencies:" in workflow
-    assert "name: Test minimum dependencies" in workflow
-    assert "run: uv python install 3.11" in workflow
-    assert "run: make minimum-dependency-check UV_PYTHON=3.11" in workflow
-    assert "needs: [check, test-python, test-minimum-dependencies]" in workflow
+    assert re.search(r"(?m)^  test-minimum-dependencies:\s*$", workflow)
+    assert re.search(
+        r"(?ms)^  test-minimum-dependencies:\n.*?^\s+name:\s+Test minimum dependencies\s*$",
+        workflow,
+    )
+    assert re.search(r"(?m)^\s+run:\s+uv python install\s+3\.11\s*$", workflow)
+    assert re.search(
+        r"(?m)^\s+run:\s+make minimum-dependency-check\s+UV_PYTHON=3\.11\s*$",
+        workflow,
+    )
+
+    build_job = re.search(r"(?ms)^  build:\n(?:(?!^  \w).)*", workflow)
+    assert build_job
+    assert re.search(r"(?m)^\s+needs:.*test-minimum-dependencies", build_job.group())
