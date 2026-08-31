@@ -582,20 +582,27 @@ def build_fixture(
         >>> build_fixture(Path("fixture"), {})  # doctest: +SKIP
     """
     workbook = workbook_totals(sources[COUNTRY_STATS_ARCHIVE])
-    if workbook["ABW"] != {
+    aruba_workbook = workbook.get("ABW")
+    if not isinstance(aruba_workbook, dict) or aruba_workbook != {
         "UC": 56903.19754754787,
         "UCL": 45177.75497597072,
         "RUR": 4504.047416000278,
     }:
         raise ValueError("Official Aruba POP_L1 values changed.")
     gadm = json.loads(sources["gadm41_ABW_0.json"].read_text(encoding="utf-8"))
+    if not isinstance(gadm, dict):
+        raise ValueError("GADM Aruba source must be a GeoJSON object.")
     features = gadm.get("features")
     if not isinstance(features, list) or len(features) != 1:
         raise ValueError("GADM Aruba source must contain exactly one feature.")
     feature = features[0]
-    if feature["properties"] != {"GID_0": "ABW", "COUNTRY": "Aruba"}:
+    if not isinstance(feature, dict):
+        raise ValueError("GADM Aruba source feature must be an object.")
+    if feature.get("properties") != {"GID_0": "ABW", "COUNTRY": "Aruba"}:
         raise ValueError("GADM source is not Aruba.")
-    geometry = feature["geometry"]
+    geometry = feature.get("geometry")
+    if not isinstance(geometry, dict):
+        raise ValueError("GADM Aruba source feature lacks a GeoJSON geometry.")
     output_directory.mkdir(parents=True, exist_ok=False)
     cells_path = output_directory / "cells.csv"
     smod_archive = sources["GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss_V2_0.zip"]
@@ -649,10 +656,10 @@ def build_fixture(
             "aruba_global_smod": fixture_totals,
             "global_smod": direct_global,
         },
-        "workbook": {"aruba": workbook["ABW"], "global": workbook_global},
+        "workbook": {"aruba": aruba_workbook, "global": workbook_global},
         "differences": {
             "aruba_global_smod_minus_workbook": {
-                category: fixture_totals[category] - workbook["ABW"][category]
+                category: fixture_totals[category] - aruba_workbook[category]
                 for category in L1_CODES
             },
             "global_smod_minus_workbook": {
