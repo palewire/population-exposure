@@ -382,13 +382,18 @@ Iceland (global rows 25--26, columns 157--158) and its matching 240 by 240
 30-arc-second crop. Its coordinate table contains the crop's finite cells;
 the source nodata cells remain in the raster. Both are lossless float32
 GeoTIFF derivatives of GPWv4 Revision 11 Population Count 2020. The source
-product is licensed under CC BY 4.0; retain its citation when reusing them.
+product is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+reuse requires the attribution in `metadata.json`. That license applies to the
+two rasters and the coordinate table derived from them, not because this
+repository is MIT licensed.
 
-The 30-arc-second input is {FINE_URL}. The separately published one-degree
-grid is {COARSE_URL}. Both archives need an Earthdata token only during
-regeneration. GPW documentation describes the coarse Population Count grids
-as aggregations of the native cells. This checks agreement within one product,
-not agreement with an outside estimate. `{DOWNLOAD_TIMEOUT_NOTE}`
+The [30-arc-second input]({FINE_URL})
+and [one-degree grid]({COARSE_URL})
+are separately published outputs of the cited GPW product. Both archives need
+an Earthdata token only during regeneration. GPW documentation describes the
+coarse Population Count grids as aggregations of native cells. The check
+therefore tests agreement within one product, not agreement with an outside
+estimate. `{DOWNLOAD_TIMEOUT_NOTE}`
 
 Regenerate only after deliberately accepting the authenticated 405 MB fine
 archive:

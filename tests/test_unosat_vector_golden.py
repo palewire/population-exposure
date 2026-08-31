@@ -67,7 +67,9 @@ def test_extract_members_requires_a_prefix_boundary(tmp_path: Path) -> None:
 @pytest.mark.component
 def test_unosat_basankusu_exactextract_golden() -> None:
     """Pin the comparator result; do not claim to reproduce UNOSAT's method."""
-    metadata = json.loads((FIXTURE_DIRECTORY / "metadata.json").read_text())
+    metadata = json.loads(
+        (FIXTURE_DIRECTORY / "metadata.json").read_text(encoding="utf-8")
+    )
     hazard_path = FIXTURE_DIRECTORY / "hazard.geojson"
     population_path = FIXTURE_DIRECTORY / "population.tif"
     assert metadata["evidence"]["category"] == "real-data method comparison"
@@ -133,7 +135,9 @@ def test_unosat_basankusu_exactextract_golden() -> None:
 @pytest.mark.component
 def test_unosat_basankusu_cell_center_reference_is_pinned() -> None:
     """Keep the transparent internal reference distinct from an ArcGIS result."""
-    metadata = json.loads((FIXTURE_DIRECTORY / "metadata.json").read_text())
+    metadata = json.loads(
+        (FIXTURE_DIRECTORY / "metadata.json").read_text(encoding="utf-8")
+    )
     hazard = gpd.read_file(FIXTURE_DIRECTORY / "hazard.geojson", engine="pyogrio")
 
     with rasterio.open(FIXTURE_DIRECTORY / "population.tif") as population:
