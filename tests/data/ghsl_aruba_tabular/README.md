@@ -41,7 +41,7 @@ Regenerate after deliberately accepting the approximately 520 MB cold-cache
 download:
 
 ```sh
-uv run python scripts/regenerate_ghsl_tabular_golden.py \
+uv run --group test python scripts/regenerate_ghsl_tabular_golden.py \
   --accept-download \
   tests/data/ghsl_aruba_tabular
 ```

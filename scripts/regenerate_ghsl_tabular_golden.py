@@ -6,7 +6,7 @@ GHS-COUNTRY-STATS: the latter splits settlement clusters at GADM 4.1 country
 borders before classifying them.
 
 Example:
-    uv run python scripts/regenerate_ghsl_tabular_golden.py \
+    uv run --group test python scripts/regenerate_ghsl_tabular_golden.py \
         --accept-download \
         tests/data/ghsl_aruba_tabular
 """
@@ -30,7 +30,7 @@ from urllib.parse import urlsplit
 
 import numpy as np
 import rasterio
-from defusedxml import ElementTree
+from defusedxml import ElementTree  # deptry: ignore[DEP004]
 from platformdirs import user_cache_path
 from rasterio.features import geometry_mask
 from rasterio.windows import Window, from_bounds
@@ -80,6 +80,7 @@ WORKBOOK_COLUMNS = (
     "2025",
     "2030",
 )
+WORKBOOK_COLUMN_LETTERS = tuple(chr(ord("A") + index) for index in range(16))
 L1_CODES = {
     "UC": (30,),
     "UCL": (21, 22, 23),
@@ -294,7 +295,10 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
     namespace = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     relation = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     with zipfile.ZipFile(archive_path) as archive:
-        workbook_info = archive.getinfo(WORKBOOK_MEMBER)
+        try:
+            workbook_info = archive.getinfo(WORKBOOK_MEMBER)
+        except KeyError as error:
+            raise ValueError("Archive lacks the COUNTRY-STATS workbook.") from error
         if workbook_info.file_size > 1_000_000:
             raise ValueError("Workbook exceeds its expected extraction limit.")
         workbook_bytes = archive.read(workbook_info)
@@ -325,7 +329,11 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
         strings = _shared_strings(archive, namespace)
         sheet = ElementTree.fromstring(archive.read(f"xl/{target_path}"))
     rows = list(_worksheet_rows(sheet, strings, namespace))
-    if not rows or tuple(rows[0].values()) != WORKBOOK_COLUMNS:
+    if (
+        not rows
+        or tuple(rows[0].get(column) for column in WORKBOOK_COLUMN_LETTERS)
+        != WORKBOOK_COLUMNS
+    ):
         raise ValueError("Workbook POP_L1 columns changed.")
     totals: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for row in rows[1:]:
@@ -596,17 +604,23 @@ def _aruba_rows(
         rows: list[dict[str, str]] = []
         totals: dict[str, float] = defaultdict(float)
         for row, column in np.argwhere(included):
-            code = int(classes[row, column])
-            category = code_categories.get(code)
-            if category is None:
-                if code in {-200, 10}:
-                    continue
-                raise ValueError(f"Unexpected SMOD class in Aruba: {code}")
             value = float(values[row, column])
             if not np.isfinite(value) or value < 0:
                 raise ValueError(
                     "Aruba GHS-POP values must be finite and non-negative."
                 )
+            code = int(classes[row, column])
+            category = code_categories.get(code)
+            if category is None:
+                if code == 0:
+                    if value != 0:
+                        raise ValueError(
+                            "Unclassified Aruba SMOD cells have non-zero population."
+                        )
+                    continue
+                if code in {-200, 10}:
+                    continue
+                raise ValueError(f"Unexpected SMOD class in Aruba: {code}")
             longitude, latitude = transform * (int(column) + 0.5, int(row) + 0.5)
             rows.append(
                 {
