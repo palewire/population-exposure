@@ -356,7 +356,6 @@ LANDSCAN = SourceSpec(
     doi=None,
     doi_by_year=MappingProxyType(
         {
-            2023: "10.48690/1531770",
             2024: "10.48690/1532445",
         }
     ),

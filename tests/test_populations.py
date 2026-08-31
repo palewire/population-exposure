@@ -170,10 +170,12 @@ def test_list_and_info_expose_verified_source_facts() -> None:
     assert ghsl.license.startswith("Creative Commons Attribution")
     assert ghsl.official_url.endswith("_V1_0.zip")
     assert any("do not treat it as independent" in note for note in ghsl.notes)
-    landscan = populations.info("landscan-global:2024")
-    assert landscan.meaning == "ambient"
-    assert landscan.doi == "10.48690/1532445"
-    assert "redistribution" in landscan.license
+    landscan_2023 = populations.info("landscan-global:2023")
+    assert landscan_2023.doi is None
+    landscan_2024 = populations.info("landscan-global:2024")
+    assert landscan_2024.meaning == "ambient"
+    assert landscan_2024.doi == "10.48690/1532445"
+    assert "redistribution" in landscan_2024.license
 
 
 @pytest.mark.parametrize(
