@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 FRACTION = "population_coverage_fraction"
 COMPLETE = "population_coverage_complete"
+DATA_FRACTION = "population_data_fraction"
+DATA_COMPLETE = "population_data_complete"
 GEODESIC_BAND_SHARE = 0.6510755654023153
 GEODESIC_HIGH_LATITUDE_SHARE = 0.7671702885835849
 GEODESIC_MULTIPOLYGON_SHARE = 0.4353464995068396
@@ -200,21 +202,43 @@ def test_no_data_inside_the_footprint_stays_covered(tmp_path: Path) -> None:
     assert result["population"].item() == pytest.approx(9.0)
 
 
-def test_polygon_over_only_nodata_returns_zero(tmp_path: Path) -> None:
+def test_polygon_over_only_nodata_is_not_reported_as_zero(tmp_path: Path) -> None:
     population = write_population(
         tmp_path / "population.tif",
         values=np.array([[-9999.0, 2.0], [3.0, 4.0]]),
     )
     hazard = gpd.GeoDataFrame(geometry=[box(0, 1, 1, 2)], crs="EPSG:3857")
 
-    result = pe.assign_population(hazard, population)
+    with pytest.raises(
+        pe.MissingPopulationDataError,
+        match="no population values anywhere the raster covers",
+    ):
+        pe.assign_population(hazard, population)
 
-    assert result["population"].item() == pytest.approx(0.0)
+
+def test_polygon_over_only_nodata_can_opt_in_to_missing(tmp_path: Path) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.array([[-9999.0, 2.0], [3.0, 4.0]]),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[box(0, 1, 1, 2)], crs="EPSG:3857")
+
+    result = pe.assign_population(
+        hazard,
+        population,
+        allow_missing_population_data=True,
+    )
+
+    assert np.isnan(result["population"].item())
+    assert result[DATA_FRACTION].item() == pytest.approx(0.0)
+    assert bool(result[DATA_COMPLETE].item()) is False
     assert FRACTION not in result.columns
     assert COMPLETE not in result.columns
 
 
-def test_partly_covered_nodata_polygon_path_returns_zero(tmp_path: Path) -> None:
+def test_partly_covered_nodata_polygon_path_reports_data_support(
+    tmp_path: Path,
+) -> None:
     population = write_population(
         tmp_path / "population.tif",
         values=np.array([[-9999.0, 2.0], [3.0, 4.0]]),
@@ -224,15 +248,24 @@ def test_partly_covered_nodata_polygon_path_returns_zero(tmp_path: Path) -> None
         vector_path, driver="GeoJSON"
     )
 
+    with pytest.raises(
+        pe.MissingPopulationDataError,
+        match="no population values anywhere the raster covers",
+    ):
+        pe.assign_population(vector_path, population, allow_partial_coverage=True)
+
     result = pe.assign_population(
         vector_path,
         population,
         allow_partial_coverage=True,
+        allow_missing_population_data=True,
     )
 
-    assert result["population"].item() == pytest.approx(0.0)
+    assert np.isnan(result["population"].item())
     assert result[FRACTION].item() == pytest.approx(0.5)
     assert bool(result[COMPLETE].item()) is False
+    assert result[DATA_FRACTION].item() == pytest.approx(0.0)
+    assert bool(result[DATA_COMPLETE].item()) is False
 
 
 def test_coverage_fraction_uses_physical_surface_area(tmp_path: Path) -> None:
@@ -463,7 +496,7 @@ def test_dispatch_forwards_partial_coverage_for_vector_paths(
     assert result[FRACTION].item() == pytest.approx(0.5)
 
 
-def test_partial_coverage_does_not_apply_to_other_hazard_types(
+def test_partial_coverage_does_not_apply_to_table_hazards(
     tmp_path: Path,
 ) -> None:
     population = write_population(tmp_path / "population.tif")
@@ -484,16 +517,19 @@ def test_partial_coverage_does_not_apply_to_other_hazard_types(
     table = pd.DataFrame({"cell": ["A"]})
     table_population = pd.DataFrame({"cell": ["A"], "population": [1.0]})
 
-    with pytest.raises(ValueError, match="only to vector hazards"):
-        pe.assign_population(hazard_raster, population, allow_partial_coverage=True)
+    # Raster hazards accept the same opt-in that vector hazards do.
+    assert pe.assign_population(
+        hazard_raster, population, allow_partial_coverage=True
+    ).shape == (2, 2)
 
-    with pytest.raises(ValueError, match="only to vector hazards"):
-        pe.assign_population(
-            table,
-            table_population,
-            cell_columns="cell",
-            allow_partial_coverage=True,
-        )
+    for option in ("allow_partial_coverage", "allow_missing_population_data"):
+        with pytest.raises(ValueError, match="only to vector and raster hazards"):
+            pe.assign_population(
+                table,
+                table_population,
+                cell_columns="cell",
+                **{option: True},
+            )
 
 
 def test_partial_coverage_flag_must_be_a_boolean(tmp_path: Path) -> None:

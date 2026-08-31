@@ -42,6 +42,7 @@ def assign_population(
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
+    allow_missing_population_data: bool = False,
     hazard_band: int | None = None,
     conservation_tolerance: float | None = None,
 ) -> gpd.GeoDataFrame: ...
@@ -57,6 +58,7 @@ def assign_population(
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
+    allow_missing_population_data: bool = False,
     hazard_band: int | None = None,
     conservation_tolerance: float | None = None,
 ) -> pd.DataFrame: ...
@@ -72,6 +74,7 @@ def assign_population(
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
+    allow_missing_population_data: bool = False,
     hazard_band: int | None = None,
     conservation_tolerance: float | None = None,
 ) -> RasterAssignment: ...
@@ -87,6 +90,7 @@ def assign_population(
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
+    allow_missing_population_data: bool = False,
     hazard_band: int | None = None,
     conservation_tolerance: float | None = None,
 ) -> gpd.GeoDataFrame | RasterAssignment: ...
@@ -101,21 +105,29 @@ def assign_population(
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
+    allow_missing_population_data: bool = False,
     hazard_band: int | None = None,
     conservation_tolerance: float | None = None,
 ) -> pd.DataFrame | gpd.GeoDataFrame | RasterAssignment:
     """Return hazards with an estimated population represented by a source/year.
 
     Spatial hazard and population inputs must share one coordinate system, and
-    vector features must sit inside the population raster. Table assignment
-    uses exact keys and has no coordinate system. Both spatial rules can be
-    relaxed one at a time with an explicit opt-in.
+    spatial hazards must sit inside the population raster. Table assignment
+    uses exact keys and has no coordinate system. Each spatial rule can be
+    relaxed with an explicit opt-in.
 
     The result is not a count of observed people, exact households, or
     event-time presence. Vector allocation uses the covered share of each
     population cell; raster allocation uses coverage-weighted sum resampling;
     table allocation uses an exact key join. A finer output grid does not add
     demographic detail.
+
+    Two separate facts are reported about spatial hazards. Coverage says how
+    much of the hazard sits inside the population raster's outer edge, and is
+    required to be complete by default. Data support says how much of it has
+    real population values rather than no-data. Partial data support is allowed
+    and reported, because coastlines are made of it; only a hazard with no
+    values at all raises, and that too can be allowed explicitly.
 
     Args:
         hazard: A pandas table, GeoDataFrame, vector file path, GeoTIFF path,
@@ -132,16 +144,24 @@ def assign_population(
             coordinate system, or to warp a population raster to the hazard
             coordinate system and grid. It applies only to vector and raster
             hazards.
-        allow_partial_coverage: True to allow vector features that reach
-            outside the population raster, and to report how much of each was
-            covered in physical surface area. The fraction is not the share of
-            population captured and must not scale a partial total. It applies
-            only to vector hazards.
+        allow_partial_coverage: True to allow a hazard that reaches outside the
+            population raster, and to report how much of it was covered. The
+            share is not the share of population captured and must not scale a
+            partial total. Vector features report an approximate physical
+            surface-area share; raster hazards report a footprint-area share on
+            the population grid. It applies to vector and raster hazards.
+        allow_missing_population_data: True to allow a hazard the population
+            raster holds no values for anywhere. Vector features get ``NaN``
+            rather than a number, because no-data is not a count of zero
+            people. Partly missing data needs no opt-in; it is always allowed
+            and always reported. It applies to vector and raster hazards.
         hazard_band: A one-based band number for multiband hazard rasters.
         conservation_tolerance: The allowed relative difference between the
             population covered by the hazard footprint and the population
-            aligned to the hazard grid. It applies only to raster hazards and
-            defaults to ``1e-6``, or ``1e-3`` when reprojection is used.
+            aligned to the hazard grid. It measures the arithmetic of
+            regridding only; it is not a completeness or uncertainty measure.
+            It applies only to raster hazards and defaults to ``1e-6``, or
+            ``1e-3`` when reprojection is used.
 
     Returns:
         pandas.DataFrame | geopandas.GeoDataFrame | RasterAssignment: The
@@ -152,7 +172,10 @@ def assign_population(
     Raises:
         population_exposure.CrsMismatchError: If the coordinate systems
             differ and reprojection was not allowed.
-        population_exposure.PartialCoverageError: If a vector feature reaches
+        population_exposure.MissingPopulationDataError: If the population
+            raster has no values where the hazard sits and missing data was
+            not allowed.
+        population_exposure.PartialCoverageError: If the hazard reaches
             outside the population raster and partial coverage was not
             allowed.
         TypeError: If the hazard and population types cannot be combined.
@@ -174,6 +197,7 @@ def assign_population(
         allow_overlaps=allow_overlaps,
         allow_reprojection=allow_reprojection,
         allow_partial_coverage=allow_partial_coverage,
+        allow_missing_population_data=allow_missing_population_data,
         hazard_band=hazard_band,
         conservation_tolerance=conservation_tolerance,
     )
@@ -190,15 +214,13 @@ def assign_population(
             allow_overlaps=allow_overlaps,
             allow_reprojection=allow_reprojection,
             allow_partial_coverage=allow_partial_coverage,
+            allow_missing_population_data=allow_missing_population_data,
         )
 
     if isinstance(hazard, DatasetReader):
         if isinstance(population, pd.DataFrame):
             raise TypeError("Raster hazards require a population raster.")
-        _reject_vector_only_options(
-            allow_overlaps=allow_overlaps,
-            allow_partial_coverage=allow_partial_coverage,
-        )
+        _reject_vector_only_options(allow_overlaps=allow_overlaps)
         return assign_raster_population(
             hazard,
             population,
@@ -206,6 +228,8 @@ def assign_population(
             hazard_band=hazard_band,
             conservation_tolerance=conservation_tolerance,
             allow_reprojection=allow_reprojection,
+            allow_partial_coverage=allow_partial_coverage,
+            allow_missing_population_data=allow_missing_population_data,
         )
 
     if isinstance(hazard, (str, PathLike)):
@@ -223,14 +247,12 @@ def assign_population(
                 allow_overlaps=allow_overlaps,
                 allow_reprojection=allow_reprojection,
                 allow_partial_coverage=allow_partial_coverage,
+                allow_missing_population_data=allow_missing_population_data,
             )
         if suffix in _RASTER_SUFFIXES:
             if isinstance(population, pd.DataFrame):
                 raise TypeError("Raster hazards require a population raster.")
-            _reject_vector_only_options(
-                allow_overlaps=allow_overlaps,
-                allow_partial_coverage=allow_partial_coverage,
-            )
+            _reject_vector_only_options(allow_overlaps=allow_overlaps)
             return assign_raster_population(
                 path,
                 population,
@@ -238,6 +260,8 @@ def assign_population(
                 hazard_band=hazard_band,
                 conservation_tolerance=conservation_tolerance,
                 allow_reprojection=allow_reprojection,
+                allow_partial_coverage=allow_partial_coverage,
+                allow_missing_population_data=allow_missing_population_data,
             )
         supported = ", ".join(sorted(_VECTOR_SUFFIXES | _RASTER_SUFFIXES))
         raise ValueError(
@@ -249,9 +273,10 @@ def assign_population(
             raise TypeError(
                 "population must be a pandas DataFrame for tabular hazards."
             )
-        _reject_vector_only_options(
-            allow_overlaps=allow_overlaps,
+        _reject_vector_only_options(allow_overlaps=allow_overlaps)
+        _reject_spatial_only_options(
             allow_partial_coverage=allow_partial_coverage,
+            allow_missing_population_data=allow_missing_population_data,
         )
         if allow_reprojection:
             raise ValueError(
@@ -341,6 +366,7 @@ def _validate_common_options(
     allow_overlaps: bool,
     allow_reprojection: bool,
     allow_partial_coverage: bool,
+    allow_missing_population_data: bool,
     hazard_band: int | None,
     conservation_tolerance: float | None,
 ) -> None:
@@ -350,7 +376,9 @@ def _validate_common_options(
         population_column: Name of the population column to append.
         allow_overlaps: True to allow overlapping vector polygons.
         allow_reprojection: True to allow automatic reprojection.
-        allow_partial_coverage: True to allow partly covered vector features.
+        allow_partial_coverage: True to allow partly covered hazards.
+        allow_missing_population_data: True to allow hazards the population
+            raster has no values for.
         hazard_band: A one-based band number, or None.
         conservation_tolerance: An explicit allowed relative difference, or
             None to use the default for the situation.
@@ -369,6 +397,7 @@ def _validate_common_options(
         ...     allow_overlaps=False,
         ...     allow_reprojection=False,
         ...     allow_partial_coverage=False,
+        ...     allow_missing_population_data=False,
         ...     hazard_band=None,
         ...     conservation_tolerance=None,
         ... )
@@ -379,6 +408,7 @@ def _validate_common_options(
         ("allow_overlaps", allow_overlaps),
         ("allow_reprojection", allow_reprojection),
         ("allow_partial_coverage", allow_partial_coverage),
+        ("allow_missing_population_data", allow_missing_population_data),
     ):
         if not isinstance(value, bool):
             raise TypeError(f"{name} must be a boolean.")
@@ -395,16 +425,36 @@ def _validate_common_options(
         raise ValueError("conservation_tolerance must be finite and non-negative.")
 
 
-def _reject_vector_only_options(
-    *,
-    allow_overlaps: bool,
-    allow_partial_coverage: bool,
-) -> None:
+def _reject_vector_only_options(*, allow_overlaps: bool) -> None:
     """Reject vector-only options passed with another hazard type.
 
     Args:
         allow_overlaps: True to allow overlapping vector polygons.
-        allow_partial_coverage: True to allow partly covered vector features.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If the option is turned on.
+
+    Examples:
+        >>> _reject_vector_only_options(allow_overlaps=False)
+    """
+    if allow_overlaps:
+        raise ValueError("allow_overlaps applies only to vector hazards.")
+
+
+def _reject_spatial_only_options(
+    *,
+    allow_partial_coverage: bool,
+    allow_missing_population_data: bool,
+) -> None:
+    """Reject raster-backed options passed with a table hazard.
+
+    Args:
+        allow_partial_coverage: True to allow partly covered hazards.
+        allow_missing_population_data: True to allow hazards the population
+            raster has no values for.
 
     Returns:
         None.
@@ -413,14 +463,19 @@ def _reject_vector_only_options(
         ValueError: If either option is turned on.
 
     Examples:
-        >>> _reject_vector_only_options(
-        ...     allow_overlaps=False, allow_partial_coverage=False
+        >>> _reject_spatial_only_options(
+        ...     allow_partial_coverage=False,
+        ...     allow_missing_population_data=False,
         ... )
     """
-    if allow_overlaps:
-        raise ValueError("allow_overlaps applies only to vector hazards.")
     if allow_partial_coverage:
-        raise ValueError("allow_partial_coverage applies only to vector hazards.")
+        raise ValueError(
+            "allow_partial_coverage applies only to vector and raster hazards."
+        )
+    if allow_missing_population_data:
+        raise ValueError(
+            "allow_missing_population_data applies only to vector and raster hazards."
+        )
 
 
 def _existing_path(value: str | PathLike[str], *, parameter: str) -> Path:

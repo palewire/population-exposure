@@ -19,8 +19,9 @@ from population_exposure._crs import (
     require_matching_crs,
     transform_geometries,
 )
-from population_exposure._errors import PartialCoverageError
+from population_exposure._errors import MissingPopulationDataError, PartialCoverageError
 from population_exposure.raster import (
+    COVERAGE_TOLERANCE,
     RasterSource,
     normalize_raster_source,
     open_raster,
@@ -41,11 +42,15 @@ _POLYGON_TYPES = frozenset({"Polygon", "MultiPolygon"})
 
 COVERAGE_FRACTION_COLUMN = "population_coverage_fraction"
 COVERAGE_COMPLETE_COLUMN = "population_coverage_complete"
+DATA_FRACTION_COLUMN = "population_data_fraction"
+DATA_COMPLETE_COLUMN = "population_data_complete"
 _COVERAGE_COLUMNS = (COVERAGE_FRACTION_COLUMN, COVERAGE_COMPLETE_COLUMN)
+_DATA_COLUMNS = (DATA_FRACTION_COLUMN, DATA_COMPLETE_COLUMN)
 
-# A feature counts as fully covered when its share is within this much of one.
-# The allowance absorbs floating-point noise, not a real sliver of missing area.
-COVERAGE_TOLERANCE = 1e-9
+# The largest share below one, used to keep an incomplete share from rounding
+# up to a complete-looking 1.0.
+_JUST_BELOW_ONE = float(np.nextafter(1.0, 0.0))
+
 _REPORTED_ROWS = 5
 _SURFACE_AREA_CRS = CRS.from_epsg(4326)
 _SURFACE_AREA_TOLERANCE = 1e-7
@@ -75,12 +80,19 @@ def assign_vector_population(
     allow_overlaps: bool,
     allow_reprojection: bool,
     allow_partial_coverage: bool,
+    allow_missing_population_data: bool,
 ) -> gpd.GeoDataFrame:
     """Assign estimated source/year population to polygon features.
 
     Each population cell contributes according to the share of its area covered
     by a feature. The result represents the selected source and reference year;
     it is not a count of observed people or event-time presence.
+
+    Two separate facts are reported for every feature. Coverage says how much
+    of the feature sits inside the population raster's outer edge, and must be
+    complete unless partial coverage is allowed. Data support says how much of
+    it has real population values rather than no-data; partial support is
+    allowed and reported, and only a feature with no values at all raises.
 
     Args:
         hazard: A GeoDataFrame of polygons, or a path to a vector file.
@@ -94,14 +106,20 @@ def assign_vector_population(
             population raster, and to report each feature's approximate physical
             surface-area share that was covered. This fraction is not the share
             of population captured and must not scale a partial total.
+        allow_missing_population_data: True to return ``NaN`` instead of raising
+            for a feature the population raster has no values for.
 
     Returns:
         geopandas.GeoDataFrame: The hazard features with population appended,
-        plus coverage columns when partial coverage is allowed.
+        plus the two data-support columns, plus the two coverage columns when
+        partial coverage is allowed.
 
     Raises:
         population_exposure.CrsMismatchError: If the coordinate systems
             differ and reprojection was not allowed.
+        population_exposure.MissingPopulationDataError: If the population
+            raster has no values under a feature and missing data was not
+            allowed.
         population_exposure.PartialCoverageError: If a feature reaches outside
             the population raster and partial coverage was not allowed.
         RuntimeError: If partial coverage is requested and a feature's
@@ -119,6 +137,7 @@ def assign_vector_population(
         ...     allow_overlaps=False,
         ...     allow_reprojection=False,
         ...     allow_partial_coverage=False,
+        ...     allow_missing_population_data=False,
         ... )
     """
     source = _load_vector(hazard)
@@ -160,6 +179,7 @@ def assign_vector_population(
             total=population_total,
         )
         coverage = _coverage_fractions(geometries, population_reader)
+        covered = coverage >= 1.0 - COVERAGE_TOLERANCE
         _require_coverage(
             coverage,
             index=source.index,
@@ -183,16 +203,23 @@ def assign_vector_population(
                 strategy="feature-sequential",
             ),
         )
-        totals = _ordered_totals(
+        totals, valid_cells = _ordered_totals(
             summary,
             expected_rows=len(working),
             spatial_coverage=coverage,
+        )
+        data = _data_fractions(valid_cells, geometries, population_reader)
+        _require_population_data(
+            data,
+            index=source.index,
+            allow_missing_population_data=allow_missing_population_data,
         )
         surface_coverage = (
             _surface_coverage_fractions(
                 geometries,
                 population_reader,
                 population_reader.crs,
+                covered=covered,
             )
             if allow_partial_coverage
             else None
@@ -201,10 +228,12 @@ def assign_vector_population(
 
     result = source
     result[population_column] = totals
+    result[DATA_FRACTION_COLUMN] = data
+    result[DATA_COMPLETE_COLUMN] = data == 1.0
     if allow_partial_coverage:
         assert surface_coverage is not None
         result[COVERAGE_FRACTION_COLUMN] = surface_coverage
-        result[COVERAGE_COMPLETE_COLUMN] = coverage >= 1.0 - COVERAGE_TOLERANCE
+        result[COVERAGE_COMPLETE_COLUMN] = covered
     result.attrs = {
         **source.attrs,
         "population_assignment": {
@@ -214,6 +243,7 @@ def assign_vector_population(
             "overlaps_allowed": allow_overlaps,
             "reprojected": reprojecting,
             "partial_coverage_allowed": allow_partial_coverage,
+            "missing_population_data_allowed": allow_missing_population_data,
         },
         "population_source": population_metadata,
     }
@@ -241,7 +271,8 @@ def _validate_vector(
     Args:
         hazard: The loaded hazard features.
         population_column: Name of the population column to append.
-        allow_partial_coverage: True when coverage columns will be added.
+        allow_partial_coverage: True when coverage columns will be added
+            alongside the data-support columns.
 
     Returns:
         None.
@@ -260,21 +291,26 @@ def _validate_vector(
         ...     allow_partial_coverage=False,
         ... )
     """
+    reserved = _DATA_COLUMNS + (_COVERAGE_COLUMNS if allow_partial_coverage else ())
+    if population_column in reserved:
+        raise ValueError(
+            f"population_column cannot be {population_column!r}; assignment "
+            f"adds that column itself. Assignment adds "
+            f"{', '.join(repr(name) for name in reserved)}."
+        )
     if population_column in hazard.columns:
         raise ValueError(
             f"hazard already has a column named {population_column!r}; "
             "choose a different population_column."
         )
-    if allow_partial_coverage:
-        taken = [name for name in _COVERAGE_COLUMNS if name in hazard.columns]
-        if taken:
-            names = ", ".join(repr(name) for name in taken)
-            raise ValueError(
-                f"hazard already has a column named {names}; rename it before "
-                "using allow_partial_coverage=True, which adds the "
-                f"{COVERAGE_FRACTION_COLUMN!r} and {COVERAGE_COMPLETE_COLUMN!r} "
-                "columns."
-            )
+    taken = [name for name in reserved if name in hazard.columns]
+    if taken:
+        names = ", ".join(repr(name) for name in taken)
+        raise ValueError(
+            f"hazard already has a column named {names}; rename it before "
+            "assignment, which adds the "
+            f"{', '.join(repr(name) for name in reserved)} columns."
+        )
     if hazard.crs is None:
         raise ValueError("hazard vector must define a CRS.")
     if hazard.empty:
@@ -375,22 +411,28 @@ def _surface_coverage_fractions(
     geometries: list[BaseGeometry],
     population: DatasetReader,
     population_crs: object,
+    *,
+    covered: np.ndarray,
 ) -> np.ndarray:
     """Return each feature's approximate covered share of physical Earth-surface area.
 
     The strict coverage rule uses the population grid's own plane. This
     separate calculation reports a projection-independent physical-area share
-    without changing that rule.
+    without changing that rule. A feature the rule counts as fully covered is
+    reported as exactly 1, so the share and the completeness flag agree.
 
     Args:
         geometries: Hazard geometry in the population raster's coordinate
             system.
         population: The open population raster.
         population_crs: The population raster's coordinate system.
+        covered: True for each feature the strict rule counts as fully inside
+            the population raster.
 
     Returns:
         numpy.ndarray: One share between 0 and 1 for each feature, measured on
-        the WGS84 ellipsoid.
+        the WGS84 ellipsoid. It is exactly 1 for a covered feature and strictly
+        less than 1 for any other.
 
     Raises:
         RuntimeError: If a feature's intersection with the population raster
@@ -402,18 +444,24 @@ def _surface_coverage_fractions(
             splitting long geographic edges.
 
     Examples:
+        >>> import numpy as np
         >>> import rasterio
         >>> from shapely.geometry import box
         >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
-        ...     _surface_coverage_fractions([box(0, 0, 1, 1)], raster, raster.crs)
+        ...     _surface_coverage_fractions(
+        ...         [box(0, 0, 1, 1)],
+        ...         raster,
+        ...         raster.crs,
+        ...         covered=np.array([True]),
+        ...     )
         array([1.])
     """
     footprint = raster_footprint(population)
-    covered = [
+    covered_geometries = [
         _polygonal_geometry(geometry.intersection(footprint)) for geometry in geometries
     ]
     geographic_geometries = _geographic_geometries(geometries, population_crs)
-    geographic_covered = _geographic_geometries(covered, population_crs)
+    geographic_covered = _geographic_geometries(covered_geometries, population_crs)
     full_areas = np.asarray(
         [_geodesic_area(geometry) for geometry in geographic_geometries],
         dtype=float,
@@ -422,8 +470,11 @@ def _surface_coverage_fractions(
         [_geodesic_area(geometry) for geometry in geographic_covered],
         dtype=float,
     )
-    fractions = covered_areas / full_areas
-    return np.clip(fractions, 0.0, 1.0)
+    fractions = np.clip(covered_areas / full_areas, 0.0, 1.0)
+    # The geodesic measurement is approximate, so a barely incomplete feature
+    # can measure a full share. Keep it strictly below one, so a fraction of
+    # exactly 1 always means the strict rule counted the feature as covered.
+    return np.where(covered, 1.0, np.minimum(fractions, _JUST_BELOW_ONE))
 
 
 def _geographic_geometries(
@@ -749,6 +800,8 @@ def _describe_rows(
     index: pd.Index,
     selected: np.ndarray,
     coverage: np.ndarray,
+    *,
+    measure: str = "covered",
 ) -> str:
     """Name the affected hazard rows and how much of each was covered.
 
@@ -756,10 +809,11 @@ def _describe_rows(
         index: The hazard index.
         selected: A boolean mask of the affected rows.
         coverage: Each feature's share of area inside the raster.
+        measure: The word used to describe the share, such as ``"covered"``.
 
     Returns:
-        str: A readable list of row labels and covered shares, shortened when
-        many rows are affected.
+        str: A readable list of row labels and shares, shortened when many rows
+        are affected.
 
     Examples:
         >>> import numpy as np
@@ -774,7 +828,7 @@ def _describe_rows(
     positions = np.flatnonzero(selected)
     shown = positions[:_REPORTED_ROWS]
     described = ", ".join(
-        f"{index[position]!r} covered {coverage[position]:.1%}" for position in shown
+        f"{index[position]!r} {measure} {coverage[position]:.1%}" for position in shown
     )
     remaining = len(positions) - len(shown)
     if remaining > 0:
@@ -845,8 +899,12 @@ def _ordered_totals(
     *,
     expected_rows: int,
     spatial_coverage: np.ndarray,
-) -> np.ndarray:
-    """Return exactextract totals in original feature order.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return exactextract totals and valid-cell counts in original feature order.
+
+    A feature with no valid cells gets ``NaN`` rather than zero. No-data records
+    that the source has nothing to say about a place, so it cannot stand in for
+    a count of zero people.
 
     Args:
         summary: ExactExtract output containing one row per hazard feature.
@@ -855,7 +913,9 @@ def _ordered_totals(
             be greater than zero.
 
     Returns:
-        numpy.ndarray: One finite, non-negative population total per feature.
+        tuple[numpy.ndarray, numpy.ndarray]: One non-negative population total
+        per feature, which is ``NaN`` where no valid cells were found, and the
+        matching valid-cell count, measured in whole and partial cells.
 
     Raises:
         RuntimeError: If ExactExtract returns an incomplete or unusable result.
@@ -874,7 +934,7 @@ def _ordered_totals(
         ...     expected_rows=1,
         ...     spatial_coverage=np.array([1.0]),
         ... )
-        array([2.])
+        (array([2.]), array([1.]))
     """
     required = {_ROW_ID, "sum", "count"}
     if not required.issubset(summary.columns) or len(summary) != expected_rows:
@@ -893,10 +953,118 @@ def _ordered_totals(
     if not np.isfinite(valid_cell_count).all() or (valid_cell_count < 0).any():
         raise RuntimeError("Exactextract returned an invalid valid-cell count.")
     totals = ordered["sum"].to_numpy(dtype=float, na_value=np.nan)
-    no_valid_cells = valid_cell_count == 0
-    totals = np.where(no_valid_cells, 0.0, totals)
-    if not np.isfinite(totals).all():
+    no_valid_cells = valid_cell_count <= 0
+    totals = np.where(no_valid_cells, np.nan, totals)
+    if not np.isfinite(totals[~no_valid_cells]).all():
         raise RuntimeError("Exactextract returned a non-finite population total.")
-    if (totals < 0).any():
+    if (totals[~no_valid_cells] < 0).any():
         raise RuntimeError("Exactextract returned a negative population total.")
-    return totals
+    return totals, valid_cell_count
+
+
+def _data_fractions(
+    valid_cells: np.ndarray,
+    geometries: list[BaseGeometry],
+    population: DatasetReader,
+) -> np.ndarray:
+    """Return each feature's share of area holding real population values.
+
+    No-data cells and area outside the raster both count as unsupported. The
+    share is valid source-cell area measured in the population raster's own
+    coordinate plane, so it can be compared directly with the grid-plane
+    coverage the strict default tests. It is not physical Earth-surface area,
+    unlike ``population_coverage_fraction``, and on a longitude-latitude raster
+    the two differ materially away from the equator. It is also not a share of
+    population, so it must never scale or extrapolate a partial total.
+
+    Args:
+        valid_cells: Each feature's valid-cell count from ExactExtract,
+            measured in whole and partial cells.
+        geometries: Hazard geometry already expressed in the population
+            coordinate system.
+        population: The open population raster.
+
+    Returns:
+        numpy.ndarray: One share between 0 and 1 for each feature, in hazard
+        row order. It is exactly 1 when every part of the feature has values.
+
+    Examples:
+        >>> import numpy as np
+        >>> import rasterio
+        >>> from shapely.geometry import box
+        >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
+        ...     _data_fractions(np.array([1.0]), [box(0, 0, 1, 1)], raster)
+        array([1.])
+    """
+    cell_area = abs(population.transform.determinant)
+    areas = shapely.area(np.asarray(geometries, dtype=object))
+    supported = valid_cells * cell_area
+    fractions = np.divide(
+        supported,
+        areas,
+        out=np.zeros(len(areas), dtype=float),
+        where=areas > 0,
+    )
+    fractions = np.clip(fractions, 0.0, 1.0)
+    # Judge completeness against one cell, not against the feature. A share
+    # measured relative to a feature spanning a billion cells would round a
+    # whole missing cell away; a gap this much smaller than a single cell is
+    # floating-point noise at any size. A feature with no valid cells at all is
+    # never complete, however small it is.
+    complete = (valid_cells > 0) & (areas - supported <= COVERAGE_TOLERANCE * cell_area)
+    # Report exactly 1 when complete and strictly less than 1 otherwise, so the
+    # share and the completeness flag can never disagree.
+    return np.where(complete, 1.0, np.minimum(fractions, _JUST_BELOW_ONE))
+
+
+def _require_population_data(
+    data: np.ndarray,
+    *,
+    index: pd.Index,
+    allow_missing_population_data: bool,
+) -> None:
+    """Require the population raster to hold values under every feature.
+
+    Args:
+        data: Each feature's share of area holding real population values.
+        index: The hazard index, used to name the affected features.
+        allow_missing_population_data: True when the caller accepted ``NaN``
+            for features the raster has nothing to say about.
+
+    Returns:
+        None.
+
+    Raises:
+        population_exposure.MissingPopulationDataError: If the raster has no
+            values under a feature and missing data was not allowed.
+
+    Examples:
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> _require_population_data(
+        ...     np.array([1.0]),
+        ...     index=pd.Index([0]),
+        ...     allow_missing_population_data=False,
+        ... )
+    """
+    if allow_missing_population_data:
+        return
+    missing = data <= 0.0
+    if not missing.any():
+        return
+    count = int(missing.sum())
+    noun = "feature" if count == 1 else "features"
+    verb = "has" if count == 1 else "have"
+    raise MissingPopulationDataError(
+        f"{count} hazard {noun} {verb} no population values anywhere the raster "
+        f"covers {'it' if count == 1 else 'them'}: "
+        f"{_describe_rows(index, missing, data, measure='has population data for')}. "
+        "Every cell the raster supplies there is no-data. No-data records that "
+        "the population source has nothing to say about a place, so it is not "
+        "evidence that nobody lives there and is not reported as zero. Use a "
+        "population raster with values there, or opt in with "
+        "pe.assign_population(hazard, population, "
+        "allow_missing_population_data=True), which returns NaN for those "
+        f"features alongside the {DATA_FRACTION_COLUMN!r} and "
+        f"{DATA_COMPLETE_COLUMN!r} columns."
+    )

@@ -8,6 +8,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Report missing and partial population support explicitly. Coverage, which
+  asks whether the population grid reaches over the hazard, is now reported
+  separately from data support, which asks whether the grid holds values there.
+  Coverage is strict by default. Partial data support is allowed and reported
+  in every result, because coastlines are made of it; only zero data support
+  raises, and that can be allowed explicitly.
+- Stop reporting a vector feature that sits entirely on no-data cells as `0.0`.
+  It now raises the new `MissingPopulationDataError`, or returns `NaN` with
+  `allow_missing_population_data=True`. No-data records the absence of an
+  answer, not an empty place, so it is never turned into a count. Real
+  zero-count cells are still returned as `0`.
+- Add `population_data_fraction` and `population_data_complete` to every vector
+  result, so a partly no-data feature says how much real data stood behind its
+  total. Ordinary coastal work is unchanged and still allowed. Raster
+  assignments report the same two facts about the hazard footprint, measured on
+  the population raster's own cells rather than the sum-resampled output, which
+  marks a cell valid when any part of it had a value. The data share is valid
+  source-cell area in the population raster's coordinate plane, not physical
+  Earth-surface area like `population_coverage_fraction`, and neither share is
+  a population multiplier.
+- Require a hazard raster to sit entirely inside the population raster by
+  default. Cells beyond its edge were returned masked, which hid them rather
+  than reporting them. `allow_partial_coverage` now applies to raster hazards
+  as well as vector ones, and records the covered share.
+- Add `population_coverage_fraction`, `population_coverage_complete`,
+  `population_data_fraction`, `population_data_complete`,
+  `population_partial_coverage_allowed`, and `population_missing_data_allowed`
+  to `RasterAssignment.attrs`.
+- Align `population_coverage_fraction` with `population_coverage_complete`. A
+  fully covered feature now reports a share of exactly `1.0`, so the measured
+  share and the completeness flag can no longer disagree.
+- Describe the raster conservation check as a computational test of regridding
+  arithmetic. It compares totals over available support and cannot establish
+  completeness or uncertainty; the coverage and data-support facts do that.
 - Require hazard and population inputs to share one coordinate system. A
   mismatch now raises `CrsMismatchError` and explains both the manual and the
   automatic route, instead of silently reprojecting.
@@ -26,10 +60,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reject same-CRS geographic polygon rings with unsplit edges crossing the
   antimeridian instead of calculating population for the long way around the
   world. Properly split and supported unwrapped-domain polygons remain valid.
-- Return `0.0` for vector areas that are spatially covered but contain only
-  population no-data cells. Raster hazards entirely outside the population
-  raster now raise `PartialCoverageError`; overlapping no-data and zero-count
-  areas remain valid.
+- Raster hazards entirely outside the population raster now raise
+  `PartialCoverageError`; overlapping no-data and zero-count areas remain
+  valid.
 - Report `population_coverage_fraction` as a share of physical Earth-surface
   area rather than planar area in the raster's coordinate system. It remains a
   coverage description, not a population multiplier.

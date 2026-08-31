@@ -12,6 +12,7 @@ from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
 
 from population_exposure import (
+    MissingPopulationDataError,
     PartialCoverageError,
     RasterAssignment,
     assign_population,
@@ -93,7 +94,13 @@ def test_same_grid_returns_lazy_aligned_result(tmp_path: Path) -> None:
         "population_aligned_total": 10.0,
         "population_conservation_tolerance": 1e-6,
         "population_conservation_relative_difference": 0.0,
+        "population_coverage_fraction": 1.0,
+        "population_coverage_complete": True,
+        "population_data_fraction": 1.0,
+        "population_data_complete": True,
         "population_reprojected": False,
+        "population_partial_coverage_allowed": False,
+        "population_missing_data_allowed": False,
     }
     assert result.attrs["population_source"]["source_id"] == "custom"
     assert len(result.attrs["population_source"]["local_sha256"]) == 64
@@ -136,7 +143,10 @@ def test_partial_extent_and_nodata_are_accounted_for(tmp_path: Path) -> None:
         nodata=-32768,
     )
 
-    result = assign_population(hazard, population)
+    with pytest.raises(PartialCoverageError, match="reaches outside"):
+        assign_population(hazard, population)
+
+    result = assign_population(hazard, population, allow_partial_coverage=True)
     _, aligned = result.read()
 
     assert float(aligned.sum()) == 8.0
@@ -144,6 +154,12 @@ def test_partial_extent_and_nodata_are_accounted_for(tmp_path: Path) -> None:
     assert result.attrs["population_source_total"] == 8.0
     assert result.attrs["population_covered_total"] == 8.0
     assert result.attrs["population_aligned_total"] == 8.0
+    # Two of three columns are inside the population raster, and one of those
+    # four covered cells is no-data.
+    assert result.attrs["population_coverage_fraction"] == pytest.approx(2 / 3)
+    assert result.attrs["population_coverage_complete"] is False
+    assert result.attrs["population_data_fraction"] == pytest.approx(0.5)
+    assert result.attrs["population_data_complete"] is False
 
 
 def test_fully_outside_raster_raises_coverage_error(tmp_path: Path) -> None:
@@ -167,20 +183,41 @@ def test_fully_outside_raster_raises_coverage_error(tmp_path: Path) -> None:
     assert "population bounds" in message
 
 
-@pytest.mark.parametrize(
-    ("values", "masked"),
-    [
-        (np.array([[-9999.0, 2.0], [3.0, 4.0]]), True),
-        (np.array([[0.0, 2.0], [3.0, 4.0]]), False),
-    ],
-    ids=["nodata", "zero-population"],
-)
-def test_overlapping_raster_with_no_population_is_accepted(
-    tmp_path: Path,
-    values: np.ndarray,
-    masked: bool,
-) -> None:
-    population = write_raster(tmp_path / "population.tif", values)
+def test_hazard_over_only_nodata_is_not_reported_as_zero(tmp_path: Path) -> None:
+    population = write_raster(
+        tmp_path / "population.tif",
+        np.array([[-9999.0, 2.0], [3.0, 4.0]]),
+    )
+    hazard = write_raster(
+        tmp_path / "hazard.tif",
+        np.ones((1, 1), dtype=np.int16),
+        transform=from_origin(0, 2, 1, 1),
+        nodata=-32768,
+    )
+
+    with pytest.raises(MissingPopulationDataError, match="no values anywhere"):
+        assign_population(hazard, population)
+
+    result = assign_population(
+        hazard,
+        population,
+        allow_missing_population_data=True,
+    )
+    _, aligned = result.read()
+
+    assert result.attrs["population_covered_total"] == pytest.approx(0.0)
+    assert result.attrs["population_aligned_total"] == pytest.approx(0.0)
+    assert result.attrs["population_coverage_complete"] is True
+    assert result.attrs["population_data_fraction"] == pytest.approx(0.0)
+    assert result.attrs["population_data_complete"] is False
+    assert bool(np.ma.getmaskarray(aligned).item()) is True
+
+
+def test_hazard_over_true_zero_population_stays_zero(tmp_path: Path) -> None:
+    population = write_raster(
+        tmp_path / "population.tif",
+        np.array([[0.0, 2.0], [3.0, 4.0]]),
+    )
     hazard = write_raster(
         tmp_path / "hazard.tif",
         np.ones((1, 1), dtype=np.int16),
@@ -193,9 +230,10 @@ def test_overlapping_raster_with_no_population_is_accepted(
 
     assert result.attrs["population_covered_total"] == pytest.approx(0.0)
     assert result.attrs["population_aligned_total"] == pytest.approx(0.0)
-    assert bool(np.ma.getmaskarray(aligned).item()) is masked
-    if not masked:
-        assert aligned.item() == pytest.approx(0.0)
+    assert result.attrs["population_data_fraction"] == pytest.approx(1.0)
+    assert result.attrs["population_data_complete"] is True
+    assert bool(np.ma.getmaskarray(aligned).item()) is False
+    assert aligned.item() == pytest.approx(0.0)
 
 
 def test_fractional_partial_extent_is_conserved(tmp_path: Path) -> None:

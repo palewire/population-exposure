@@ -54,6 +54,11 @@ def test_cross_crs_cells_match_independent_area_oracle(tmp_path: Path) -> None:
     than 300 times smaller than the least error caused by the checked spatial
     swap. Full coverage permits the tighter 1e-6-person aggregate tolerance.
 
+    The destination reaching past the source means the hazard grid does not sit
+    inside the population raster, so the assignment opts in to partial
+    coverage. That opt-in only permits the call; every golden value below is
+    unchanged by it.
+
     Args:
         tmp_path: Temporary directory where the two tiny rasters are written.
 
@@ -201,10 +206,16 @@ def test_cross_crs_cells_match_independent_area_oracle(tmp_path: Path) -> None:
         hazard_path,
         population_path,
         allow_reprojection=True,
+        # The destination deliberately reaches past the source so it covers
+        # every source cell, which is the opposite of the default rule that a
+        # hazard grid sit inside the population raster. The opt-in permits it
+        # and changes no calculated value.
+        allow_partial_coverage=True,
     )
     _, assigned_counts = result.read()
 
     assert result.attrs["population_reprojected"] is True
+    assert result.attrs["population_coverage_complete"] is False
     assert not np.ma.getmaskarray(assigned_counts).any()
     np.testing.assert_allclose(
         assigned_counts,

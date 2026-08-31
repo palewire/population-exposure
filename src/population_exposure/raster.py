@@ -25,7 +25,7 @@ from population_exposure._crs import (
     require_matching_crs,
     transform_geometries,
 )
-from population_exposure._errors import PartialCoverageError
+from population_exposure._errors import MissingPopulationDataError, PartialCoverageError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -36,6 +36,15 @@ if TYPE_CHECKING:
 
 RasterSource: TypeAlias = str | PathLike[str] | DatasetReader
 _DEFAULT_BLOCK_SHAPE = (256, 256)
+
+# A hazard counts as fully inside the population raster when its share of area
+# there is within this much of one. The allowance absorbs floating-point noise,
+# not a real sliver of missing area.
+COVERAGE_TOLERANCE = 1e-9
+
+# The largest share below one, used to keep an incomplete share from rounding
+# up to a complete-looking 1.0.
+_JUST_BELOW_ONE = float(np.nextafter(1.0, 0.0))
 
 # Aligning two rasters that already share a coordinate system is arithmetic, so
 # only floating-point noise is expected. Warping between coordinate systems
@@ -111,8 +120,16 @@ def assign_raster_population(
     hazard_band: int | None,
     conservation_tolerance: float | None,
     allow_reprojection: bool,
+    allow_partial_coverage: bool,
+    allow_missing_population_data: bool,
 ) -> RasterAssignment:
     """Validate rasters and return a lazy population-aligned result.
+
+    Two separate facts are recorded in ``attrs``. Coverage says how much of the
+    hazard grid sits inside the population raster's outer edge, and must be
+    complete unless partial coverage is allowed. Data support says how much of
+    it has real population values rather than no-data; partial support is
+    allowed and reported, and only a grid with no values at all raises.
 
     Args:
         hazard: A hazard GeoTIFF path or open Rasterio reader.
@@ -126,6 +143,10 @@ def assign_raster_population(
             for the situation.
         allow_reprojection: True to warp population from another coordinate
             system onto the hazard coordinate system and grid automatically.
+        allow_partial_coverage: True to allow a hazard raster that reaches
+            outside the population raster's outer edge.
+        allow_missing_population_data: True to allow a hazard grid the
+            population raster has no values for anywhere.
 
     Returns:
         RasterAssignment: A lazy result that reads hazard cells and the
@@ -134,8 +155,12 @@ def assign_raster_population(
     Raises:
         population_exposure.CrsMismatchError: If the coordinate systems
             differ and reprojection was not allowed.
-        population_exposure.PartialCoverageError: If the hazard raster lies
-            entirely outside the population raster.
+        population_exposure.MissingPopulationDataError: If the population
+            raster has no values anywhere it covers the hazard grid and
+            missing data was not allowed.
+        population_exposure.PartialCoverageError: If the hazard raster reaches
+            outside the population raster and partial coverage was not
+            allowed.
         ValueError: If a raster cannot be used, or population is not conserved
             within the allowed difference.
 
@@ -147,6 +172,8 @@ def assign_raster_population(
         ...     hazard_band=None,
         ...     conservation_tolerance=None,
         ...     allow_reprojection=False,
+        ...     allow_partial_coverage=False,
+        ...     allow_missing_population_data=False,
         ... )
     """
     hazard_source = normalize_raster_source(hazard, parameter="hazard")
@@ -195,9 +222,19 @@ def assign_raster_population(
             footprint_crs=hazard_crs,
             reprojecting=reprojecting,
         )
-        _require_raster_overlap(population_footprint, population_reader)
-        expected_total = _population_in_footprint(
+        coverage_fraction = _require_raster_coverage(
+            population_footprint,
+            population_reader,
+            allow_partial_coverage=allow_partial_coverage,
+        )
+        expected_total, data_fraction = _population_in_footprint(
             population_reader, population_footprint
+        )
+        # Check support before warping, so an unsupported hazard fails without
+        # paying for the alignment pass first.
+        _require_raster_population_data(
+            data_fraction,
+            allow_missing_population_data=allow_missing_population_data,
         )
         aligned_total = _aligned_population_total(
             population_reader,
@@ -241,7 +278,13 @@ def assign_raster_population(
             "population_aligned_total": aligned_total,
             "population_conservation_tolerance": tolerance,
             "population_conservation_relative_difference": relative_difference,
+            "population_coverage_fraction": coverage_fraction,
+            "population_coverage_complete": coverage_fraction == 1.0,
+            "population_data_fraction": data_fraction,
+            "population_data_complete": data_fraction == 1.0,
             "population_reprojected": reprojecting,
+            "population_partial_coverage_allowed": allow_partial_coverage,
+            "population_missing_data_allowed": allow_missing_population_data,
             "population_source": population_metadata,
         }
     )
@@ -531,47 +574,131 @@ def _footprint_on_population_grid(
     )[0]
 
 
-def _require_raster_overlap(
+def _require_raster_coverage(
     footprint: BaseGeometry,
     population: DatasetReader,
-) -> None:
-    """Require the hazard and population raster footprints to share area.
+    *,
+    allow_partial_coverage: bool,
+) -> float:
+    """Require the hazard grid to sit inside the population raster's outline.
+
+    Completeness is measured against the population raster's outer edge. No-data
+    cells inside that edge, such as ocean or empty land, still count as covered,
+    so an ordinary coastal hazard grid is not rejected here.
 
     Args:
         footprint: Hazard footprint in the population coordinate system.
         population: The open population raster.
+        allow_partial_coverage: True when the caller accepted a hazard grid
+            that reaches outside the population raster.
 
     Returns:
-        None.
+        float: The share of the hazard footprint's area that sits inside the
+        population raster, from 0 to 1.
 
     Raises:
-        population_exposure.PartialCoverageError: If the raster footprints do
-            not share any area.
+        population_exposure.PartialCoverageError: If the footprints share no
+            area, or if the hazard reaches outside the population raster and
+            partial coverage was not allowed.
 
     Examples:
         >>> import rasterio
         >>> from shapely.geometry import box
         >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
-        ...     _require_raster_overlap(box(0, 0, 1, 1), raster)
+        ...     _require_raster_coverage(
+        ...         box(0, 0, 1, 1),
+        ...         raster,
+        ...         allow_partial_coverage=False,
+        ...     )
+        1.0
     """
     overlap = footprint.intersection(raster_footprint(population))
-    if not overlap.is_empty and overlap.area > 0:
-        return
+    area = footprint.area
+    inside = 0.0 if overlap.is_empty else overlap.area
+    fraction = float(np.clip(inside / area, 0.0, 1.0)) if area > 0 else 0.0
     hazard_bounds = ", ".join(f"{value:g}" for value in footprint.bounds)
     population_bounds = ", ".join(f"{value:g}" for value in population.bounds)
+    if fraction <= 0.0:
+        raise PartialCoverageError(
+            "hazard raster lies entirely outside the population raster. "
+            f"Hazard bounds on the population grid: ({hazard_bounds}); "
+            f"population bounds: ({population_bounds}). Use a population raster "
+            "that overlaps the hazard raster."
+        )
+    # Snap near-complete coverage to exactly one so the reported share and the
+    # matching completeness flag never disagree.
+    if fraction >= 1.0 - COVERAGE_TOLERANCE:
+        return 1.0
+    if allow_partial_coverage:
+        return min(fraction, _JUST_BELOW_ONE)
     raise PartialCoverageError(
-        "hazard raster lies entirely outside the population raster. "
-        f"Hazard bounds on the population grid: ({hazard_bounds}); "
-        f"population bounds: ({population_bounds}). Use a population raster "
-        "that overlaps the hazard raster."
+        f"hazard raster reaches outside the population raster: {fraction:.1%} "
+        "of its grid sits inside. Complete coverage is required by default "
+        "because cells beyond the population raster are returned masked, which "
+        "hides them rather than reporting them as unknown. Hazard bounds on the "
+        f"population grid: ({hazard_bounds}); population bounds: "
+        f"({population_bounds}). Use a population raster that reaches past the "
+        "hazard grid, clip the hazard raster, or opt in with "
+        "pe.assign_population(hazard, population, allow_partial_coverage=True), "
+        "which records 'population_coverage_fraction' and "
+        "'population_coverage_complete' in the result's attrs."
+    )
+
+
+def _require_raster_population_data(
+    data_fraction: float,
+    *,
+    allow_missing_population_data: bool,
+) -> None:
+    """Require the population raster to hold values somewhere on the hazard grid.
+
+    Args:
+        data_fraction: The share of the hazard grid holding real population
+            values.
+        allow_missing_population_data: True when the caller accepted a hazard
+            grid the population raster has nothing to say about.
+
+    Returns:
+        None.
+
+    Raises:
+        population_exposure.MissingPopulationDataError: If no hazard cell has a
+            population value and missing data was not allowed.
+
+    Examples:
+        >>> _require_raster_population_data(
+        ...     1.0,
+        ...     allow_missing_population_data=False,
+        ... )
+    """
+    if allow_missing_population_data or data_fraction > 0.0:
+        return
+    raise MissingPopulationDataError(
+        "the population raster has no values anywhere it covers the hazard "
+        "grid; every cell it supplies there is no-data. No-data records that "
+        "the population source has nothing to say about a place, so it is not "
+        "evidence that nobody lives there and is not reported as zero. Use a "
+        "population raster with values there, or opt in with "
+        "pe.assign_population(hazard, population, "
+        "allow_missing_population_data=True), which records "
+        "'population_data_fraction' and 'population_data_complete' in the "
+        "result's attrs."
     )
 
 
 def _population_in_footprint(
     population: DatasetReader,
     footprint: BaseGeometry,
-) -> float:
-    """Calculate the exact population covered by the hazard footprint.
+) -> tuple[float, float]:
+    """Measure the population and the data support under the hazard footprint.
+
+    Support is read from the population raster's own cells, not from the
+    aligned output. Sum resampling marks an output cell valid when any part of
+    it had a value, so the aligned mask would call a half-missing cell complete.
+
+    The share is valid source-cell area measured in the population raster's own
+    coordinate plane. It is not physical Earth-surface area and not a share of
+    population, so it must never scale or extrapolate a partial total.
 
     Args:
         population: The open population raster.
@@ -579,21 +706,37 @@ def _population_in_footprint(
             system.
 
     Returns:
-        float: The population covered by the footprint.
+        tuple[float, float]: The population covered by the footprint, and the
+        share of the footprint's area holding real population values, from 0 to
+        1. No-data cells and area outside the raster both count against the
+        share.
 
     Examples:
         >>> import rasterio
         >>> from shapely.geometry import box
         >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
         ...     _population_in_footprint(raster, box(0, 0, 1, 1))
-        10.0
+        (10.0, 1.0)
     """
     feature = gpd.GeoDataFrame(geometry=[footprint], crs=population.crs)
-    summary = exact_extract(population, feature, "sum", output="pandas")
-    value = float(summary.loc[0, "sum"])
-    if not np.isfinite(value):  # pragma: no cover
-        return 0.0
-    return value
+    summary = exact_extract(population, feature, ["sum", "count"], output="pandas")
+    total = float(summary.loc[0, "sum"])
+    valid_cells = float(summary.loc[0, "count"])
+    if not np.isfinite(valid_cells) or valid_cells <= 0:
+        return 0.0, 0.0
+    if not np.isfinite(total):  # pragma: no cover
+        total = 0.0
+    cell_area = abs(population.transform.determinant)
+    area = footprint.area
+    if area <= 0:  # pragma: no cover
+        return total, 0.0
+    supported = valid_cells * cell_area
+    # Judge completeness against one cell, not against the footprint, so a
+    # whole missing cell never rounds away on a very large hazard grid.
+    if area - supported <= COVERAGE_TOLERANCE * cell_area:
+        return total, 1.0
+    # Stay strictly below one so the share and the completeness flag agree.
+    return total, min(float(np.clip(supported / area, 0.0, 1.0)), _JUST_BELOW_ONE)
 
 
 @contextmanager

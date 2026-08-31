@@ -33,6 +33,11 @@ Raster conservation is a numerical check on the alignment calculation, not
 validation of the population source and not an uncertainty interval. A small
 conservation difference does not establish source accuracy.
 
+A source can also have nothing to say about a place. Every result reports how
+much of the hazard the population grid reached over and how much of it the grid
+held real values for, so a total is never quietly built on missing data. The
+"Two questions about support" section below explains both.
+
 ## Population registry
 
 The built-in registry provides curated population-count source metadata. Select
@@ -175,7 +180,8 @@ and the exact table-coordinate join below.
 
 `assign_population(hazard, population, *, cell_columns=("longitude",
 "latitude"), population_column="population", allow_overlaps=False,
-allow_reprojection=False, allow_partial_coverage=False, hazard_band=None,
+allow_reprojection=False, allow_partial_coverage=False,
+allow_missing_population_data=False, hazard_band=None,
 conservation_tolerance=None)` selects the matching behavior from the input
 types.
 
@@ -187,16 +193,17 @@ types.
 | `population_column` | Name of the new output population column. It defaults to `population` and cannot overwrite an existing hazard column. |
 | `allow_overlaps` | Allows overlapping vector polygons. It is `False` by default because adding independent overlapping totals would count shared areas more than once. It applies only to vector hazards. |
 | `allow_reprojection` | Allows automatic coordinate transformation. For vector hazards, geometry moves to the population CRS. For raster hazards, the population raster is warped to the hazard CRS and grid. It is `False` by default, so a mismatch raises an error instead. |
-| `allow_partial_coverage` | Allows vector features that reach outside the population raster, and reports how much of each was covered. It is `False` by default, so a partly covered feature raises an error instead. It applies only to vector hazards. |
+| `allow_partial_coverage` | Allows a hazard that reaches outside the population raster's outer edge, and reports how much of it was covered. It is `False` by default, so a partly covered hazard raises an error instead. It applies to vector and raster hazards. |
+| `allow_missing_population_data` | Allows a hazard the population raster holds no values for anywhere. It is `False` by default, so a hazard sitting only on no-data raises an error instead. Vector features get `NaN`, never `0`. Partly missing data needs no opt-in: it is always allowed and always reported. It applies to vector and raster hazards. |
 | `hazard_band` | A 1-based hazard band number. It is used only for multiband hazard rasters; a one-band raster selects band 1 automatically. |
-| `conservation_tolerance` | The allowed relative difference when a population raster is aligned onto a hazard raster. It applies only to raster hazards. It defaults to `1e-6` on a shared coordinate system, or `1e-3` when `allow_reprojection=True`. |
+| `conservation_tolerance` | The allowed relative difference when a population raster is aligned onto a hazard raster. It measures the arithmetic of regridding only. It applies only to raster hazards. It defaults to `1e-6` on a shared coordinate system, or `1e-3` when `allow_reprojection=True`. |
 
 Table keys must be complete and unique in both inputs. They are never rounded,
 trimmed, or otherwise normalized. An unmatched hazard row raises an error
 rather than receiving a guessed or missing population value.
 
 Vector inputs must have a coordinate system and valid, non-empty `Polygon` or
-`MultiPolygon` geometry. Each polygon must cover valid population data.
+`MultiPolygon` geometry.
 
 ## Coordinate systems
 
@@ -273,11 +280,44 @@ uncertainty interval.
 Table assignment matches exact keys and has no coordinate system, so it is not
 affected.
 
-## Population coverage
+## Two questions about support
 
-A vector feature must also sit inside the population raster. If part of it
-reaches beyond the raster's edge, the returned number would silently leave out
-everyone in the missing part, so assignment stops:
+Before you trust a population number, two different things have to be true.
+
+1. **Coverage.** Does the population raster's grid reach over the hazard? A
+   polygon half off the edge of a national raster is not covered.
+2. **Data support.** Does the raster actually hold values there? Grids record
+   nothing for places their makers had nothing to say about, usually written as
+   a no-data marker over ocean and unmapped land.
+
+These are separate, and the package keeps them separate. A hazard can sit well
+inside a raster's edge and still land entirely on no-data.
+
+A no-data cell is not a count of zero people. It records the absence of an
+answer, not the presence of an empty place. What no-data means depends on the
+source: some rasters write no-data over ocean, some write it over any cell
+their model did not reach, and some write a real `0` for empty land. Because
+the package cannot tell those apart, it never turns no-data into a number.
+
+The two rules are not the same shape, because the two problems are not the
+same. Geometry the raster never reaches is a gap you can fix by clipping or
+choosing a better raster, so **coverage is strict by default**. Missing values
+inside the raster are a fact about the source that no amount of care will
+remove, and a coastline is made of it, so **partial data support is allowed and
+reported**. Only **zero data support raises**, because there is then nothing to
+add up at all, and that can be allowed explicitly.
+
+| Rule | Default | Opt-in |
+| --- | --- | --- |
+| Coverage: hazard reaches past the raster | Raises | `allow_partial_coverage=True` |
+| Data support: some values missing | Allowed, reported in every result | none needed |
+| Data support: no values at all | Raises | `allow_missing_population_data=True` |
+
+### Coverage
+
+A hazard must sit inside the population raster. If part of it reaches beyond
+the raster's edge, the returned number would silently leave out everyone in the
+missing part, so assignment stops:
 
 ```text
 1 hazard feature reaches outside the population raster: 'zone-a' covered 50.0%.
@@ -298,29 +338,29 @@ exposed = pe.assign_population(hazard, population, allow_partial_coverage=True)
 print(exposed[["population", "population_coverage_fraction"]])
 ```
 
-`population_coverage_fraction` is an approximate share of physical surface
-area, not a share of the population. Do not use it to scale the partial
-population total.
+`population_coverage_fraction` is a share of physical surface area, not a share
+of the population. Do not use it to scale the partial population total.
 
 The opt-in adds two columns, so a partial result is never mistaken for a
 complete one:
 
 | Column | Meaning |
 | --- | --- |
-| `population_coverage_fraction` | The share of the feature's physical Earth-surface area that sits inside the raster, from 0 to 1. It is not the share of population captured and must not be used to scale or extrapolate the partial population total, because population is not spread evenly. |
-| `population_coverage_complete` | `True` when the share is within `1e-9` of 1. That allowance covers floating-point rounding only, not a real sliver of missing area. |
+| `population_coverage_fraction` | The share of the feature's **physical Earth-surface area** that sits inside the raster, from 0 to 1, measured geodesically on the WGS84 ellipsoid. It is not the share of population captured and must not be used to scale or extrapolate the partial population total, because population is not spread evenly. A feature that is fully covered reports exactly `1.0`. |
+| `population_coverage_complete` | `True` when the whole feature sits inside the raster. It is decided on the population grid, which is the same test the strict default applies, and it is exactly `population_coverage_fraction == 1.0`, so the two can never disagree. |
 
-For geographic coordinates, boundary edges are split into pieces no longer than
-0.1 degrees. This keeps latitude-band area error below `1e-6` relative in the
-validation sweep.
+The share is measured to within `1e-9` of 1, which covers floating-point
+rounding only, not a real sliver of missing area. For geographic coordinates,
+boundary edges are split into pieces no longer than 0.1 degrees. This keeps
+latitude-band area error below `1e-6` relative in the validation sweep.
 
-Coverage is measured against the raster's outer edge. No-data cells inside that
-edge, such as ocean or empty land, still count as covered, so an ordinary
-coastal polygon is not rejected. A feature that falls entirely outside the
-raster is always an error, even with the opt-in. The reported physical-area
-share cannot be measured for a polygon that covers half or more of the Earth,
-or is too close to that limit to measure reliably; split it into smaller
-polygons first.
+Coverage is measured against the raster's outer edge alone. No-data cells
+inside that edge still count as covered, so an ordinary coastal polygon passes
+this test and is judged on data support instead. A feature that falls entirely
+outside the raster is always an error, even with the opt-in. The reported
+physical-area share cannot be measured for a polygon that covers half or more
+of the Earth, or is too close to that limit to measure reliably; split it into
+smaller polygons first.
 
 Longitudes are never wrapped for you. A polygon drawn from 170 to -170 degrees
 must be split at the antimeridian or written as 170 to 190 degrees on a raster
@@ -330,6 +370,78 @@ that supports that unwrapped range. On a raster that runs from -180 to 180, a
 If the hazard also uses a different coordinate system, the coordinate-system
 error comes first. With `allow_reprojection=True`, coverage is measured on the
 correctly transformed shape.
+
+### Data support
+
+Every vector result reports how much real population data stood behind it. No
+opt-in is needed, and these two columns are always added:
+
+| Column | Meaning |
+| --- | --- |
+| `population_data_fraction` | The share of the feature's area holding real population values, from 0 to 1, measured as valid source-cell area **in the population raster's own coordinate plane**. No-data cells and area outside the raster both count against it. A feature with values everywhere reports exactly `1.0`. |
+| `population_data_complete` | `True` when every part of the feature has population values. It is exactly `population_data_fraction == 1.0`, so the two can never disagree. |
+
+The two fractions are measured on different surfaces, and neither is a share of
+population.
+
+| | `population_coverage_fraction` | `population_data_fraction` |
+| --- | --- | --- |
+| Question | How much of the feature does the grid reach over? | How much of it does the grid hold values for? |
+| Measured on | The physical Earth surface, geodesically on the WGS84 ellipsoid | The population raster's own coordinate plane |
+| Counts against it | Area outside the raster's outer edge | No-data cells, and area outside the raster |
+
+That difference is real, not a rounding detail. On EPSG:4326 the plane is
+degrees, and equal degree areas are not equal physical areas. A band from 0 to
+40 degrees of latitude is half of a 0-to-80 band in degrees, but about 65
+percent of its physical surface, because degree cells shrink toward the poles.
+So on a longitude-latitude population raster, `population_data_fraction`
+answers a grid question, not an Earth-surface one.
+
+Neither fraction is a population multiplier. Do not scale or extrapolate a
+partial total by either one. People are not spread evenly across a feature, and
+missing data is usually missing precisely where the source could not model
+people, so the unmeasured share is exactly the part you know least about.
+
+Completeness is judged against a single population cell, not against the
+feature. A gap a billionth the size of one cell is floating-point noise, but a
+whole missing cell is not, however large the feature is.
+
+A coastal polygon that stretches over water is normal work, so a partly
+supported feature is allowed. Its total is the sum of the cells that do have
+values, and the share tells you how much of the feature that covered:
+
+```python
+exposed = pe.assign_population(coastline, population)
+print(exposed[["population", "population_data_fraction"]])
+```
+
+A feature with no population data anywhere is different. There is nothing to
+add up, so assignment stops rather than reporting a zero it cannot support:
+
+```text
+1 hazard feature has no population values anywhere the raster covers it:
+'zone-a' has population data for 0.0%. Every cell the raster supplies there is
+no-data. No-data records that the population source has nothing to say about a
+place, so it is not evidence that nobody lives there and is not reported as
+zero. Use a population raster with values there, or opt in with
+pe.assign_population(hazard, population, allow_missing_population_data=True),
+which returns NaN for those features alongside the
+'population_data_fraction' and 'population_data_complete' columns.
+```
+
+Take the unknown answer explicitly when that is what you want:
+
+```python
+exposed = pe.assign_population(
+    hazard,
+    population,
+    allow_missing_population_data=True,
+)
+```
+
+Those features get `NaN`, which means unknown. They never get `0`. A cell that
+really does record zero people is kept as `0`, and its feature reports complete
+data support, so a genuine empty place and an unmapped one never look alike.
 
 ## Raster results
 
@@ -351,6 +463,13 @@ error when the difference is above:
 conservation_tolerance * max(1, covered_population)
 ```
 
+This check is about arithmetic. It asks whether regridding moved people around,
+using only the population the two rasters could supply in the first place. It
+cannot tell you whether the population raster reached over the whole hazard, or
+whether it held values there. Read `population_coverage_complete` and
+`population_data_complete` for those. A conservation difference is not an
+uncertainty estimate.
+
 Two rasters that already share a coordinate system are simply regridded, which
 is arithmetic, so the allowed difference is `1e-6`. Warping between coordinate
 systems is not exact: GDAL allocates source cells to destination cells
@@ -367,17 +486,48 @@ coarse population grids, a few hundred cells across, can exceed it; raise
 | `population_source_total` | The valid population count represented by the source raster. |
 | `population_covered_total` | The source population count covered by the hazard footprint under coverage-weighted allocation. |
 | `population_aligned_total` | The population after alignment onto the hazard grid. |
-| `population_conservation_relative_difference` | The difference between the two totals, relative to the covered total. |
+| `population_conservation_relative_difference` | The regridding difference between the two totals, relative to the covered total. It is a computational check, not a completeness or uncertainty measure. |
 | `population_conservation_tolerance` | The difference that was allowed. |
+| `population_coverage_fraction` | The share of the hazard grid that sits inside the population raster's outer edge, from 0 to 1, measured in the population raster's coordinate plane. |
+| `population_coverage_complete` | `True` when the whole hazard grid sits inside that edge. |
+| `population_data_fraction` | The share of the hazard footprint's area holding real population values, from 0 to 1, measured as valid source-cell area in the population raster's coordinate plane, not as physical Earth-surface area and not as a share of population. No-data cells and area past the raster's edge both count against it. It is the same measure vector features report, and is judged complete against a single population cell rather than the whole footprint. |
+| `population_data_complete` | `True` when the population raster holds values under the whole hazard footprint. |
 | `population_reprojected` | `True` when population was warped from another coordinate system. |
+| `population_partial_coverage_allowed` | `True` when the caller opted in to a hazard reaching past the population raster. |
+| `population_missing_data_allowed` | `True` when the caller opted in to missing population data. |
 
-Hazard and population rasters must share some area; a hazard raster entirely
-outside the population raster raises an error with both bounds. Population
-outside the hazard footprint and population no-data cells are not part of that
-covered total. A hazard footprint over population no-data or real zero-count
-cells is valid and returns masked cells or zeroes as appropriate. Population
-inputs must be finite, non-negative **counts per cell**; rasters explicitly
-marked as density are rejected instead of being silently treated as counts.
+The same two rules apply as for vector hazards. By default the hazard raster
+must sit entirely inside the population raster, because cells beyond its edge
+come back masked, which hides them rather than reporting them as unknown:
+
+```text
+hazard raster reaches outside the population raster: 50.0% of its grid sits
+inside. Complete coverage is required by default because cells beyond the
+population raster are returned masked, which hides them rather than reporting
+them as unknown.
+```
+
+Use `allow_partial_coverage=True` to accept it and read the two coverage keys.
+A hazard raster entirely outside the population raster is always an error, and
+names both bounds. A hazard grid the population raster holds no values for
+raises `MissingPopulationDataError` unless you pass
+`allow_missing_population_data=True`.
+
+Population outside the hazard footprint and population no-data cells are not
+part of the covered total. Real zero-count cells come back as `0`, and cells
+with no population under them at all come back masked, so an empty place and an
+unmapped one stay apart.
+
+Data support is measured on the population raster's own cells, not on the
+aligned output. Sum resampling adds up whatever values a hazard cell overlaps
+and treats the rest as nothing, so an output cell that was only half covered by
+real data still reads as an ordinary number. `population_data_fraction` is what
+tells you that happened. A hazard grid coarser than the population grid is the
+usual way to get there.
+
+Population inputs must be finite, non-negative **counts per cell**; rasters
+explicitly marked as density are rejected instead of being silently treated as
+counts.
 
 Paths are opened and closed for each operation. An open Rasterio reader belongs
 to the caller and is never closed by this package. Keep caller-owned hazard and
@@ -404,7 +554,8 @@ The result keeps the original geometry and coordinate system. Population cells
 crossing a polygon boundary are counted by their covered share, so totals can
 be fractional. Your raster has to use the same coordinate system as the hazard
 and reach past every polygon, or assignment raises an error explaining both the
-manual fix and the matching opt-in.
+manual fix and the matching opt-in. Its no-data marker matters too: the package
+treats no-data as an absent answer, never as zero people.
 
 ## Tabular heat exposure
 
@@ -456,7 +607,11 @@ For each result, report:
 - allocation method (coverage-weighted extraction, raster sum resampling, or
   exact table-key join);
 - reprojection choice and direction, if any;
-- incomplete population support and how it was handled; and
+- incomplete population support and how it was handled, using the coverage and
+  data-support facts the result carries: `population_coverage_fraction` and
+  `population_coverage_complete` for how much of the hazard the grid reached
+  over, and `population_data_fraction` and `population_data_complete` for how
+  much of it the grid held values for, naming any opt-in that was used; and
 - raster conservation difference, when applicable, described as a numerical
   alignment check rather than source validation or uncertainty.
 
@@ -471,6 +626,8 @@ The public API is intentionally small.
    :members: read, iter_blocks
 
 .. autoexception:: population_exposure.CrsMismatchError
+
+.. autoexception:: population_exposure.MissingPopulationDataError
 
 .. autoexception:: population_exposure.PartialCoverageError
 
