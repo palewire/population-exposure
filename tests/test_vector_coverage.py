@@ -267,7 +267,7 @@ def test_coverage_fraction_is_half_for_symmetric_longitude_coverage(
 
     result = pe.assign_population(hazard, population, allow_partial_coverage=True)
 
-    assert result[FRACTION].item() == pytest.approx(0.5, abs=1e-12)
+    assert result[FRACTION].item() == pytest.approx(0.5, abs=1e-12, rel=0)
 
 
 def test_coverage_fraction_is_independent_of_representation(

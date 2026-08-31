@@ -551,7 +551,10 @@ def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
                     f"{_MAX_GEODESIC_RING_VERTICES:,} vertices."
                 )
     densified = shapely.segmentize(geometry, _MAX_GEODESIC_SEGMENT_DEGREES)
-    assert isinstance(densified, (shapely.Polygon, shapely.MultiPolygon))
+    if not isinstance(densified, (shapely.Polygon, shapely.MultiPolygon)):
+        raise RuntimeError(
+            "Geographic boundary densification did not produce polygonal geometry."
+        )
     return densified
 
 
