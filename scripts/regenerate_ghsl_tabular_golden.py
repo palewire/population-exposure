@@ -264,12 +264,15 @@ def extract_member(archive_path: Path, member: str, destination: Path) -> Path:
         ... )  # doctest: +SKIP
         PosixPath('grid.tif')
     """
-    _safe_relative_path(member, description="Archive member")
+    member_path = _safe_relative_path(member, description="Archive member")
+    normalized_member = member_path.as_posix()
     with zipfile.ZipFile(archive_path) as archive:
         try:
-            info = archive.getinfo(member)
+            info = archive.getinfo(normalized_member)
         except KeyError as error:
-            raise ValueError(f"Archive lacks required member: {member}") from error
+            raise ValueError(
+                f"Archive lacks required member: {normalized_member}"
+            ) from error
         if info.is_dir() or info.file_size <= 0:
             raise ValueError(f"Archive member is not a non-empty file: {member}")
         destination.parent.mkdir(parents=True, exist_ok=True)

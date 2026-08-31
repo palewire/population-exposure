@@ -10,6 +10,7 @@ from scripts.regenerate_ghsl_tabular_golden import (
     WORKBOOK_COLUMNS,
     _category_for_smod,
     _workbook_header,
+    extract_member,
     workbook_totals,
 )
 
@@ -68,6 +69,28 @@ def test_workbook_totals_requires_the_expected_workbook_member(tmp_path) -> None
 
     with pytest.raises(ValueError, match="Archive lacks required member"):
         workbook_totals(archive_path)
+
+
+@pytest.mark.unit
+def test_extract_member_normalizes_safe_backslash_paths(tmp_path) -> None:
+    """Extract a slash-normalized ZIP member when given a backslash path.
+
+    Args:
+        tmp_path: Temporary test directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_extract_member_normalizes_safe_backslash_paths(None)
+    """
+    archive_path = tmp_path / "source.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("layers/grid.tif", "source")
+
+    destination = tmp_path / "grid.tif"
+    assert extract_member(archive_path, r"layers\grid.tif", destination) == destination
+    assert destination.read_text() == "source"
 
 
 @pytest.mark.unit
