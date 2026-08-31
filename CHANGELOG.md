@@ -83,6 +83,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add a CI check for the declared minimum runtime dependency versions. It uses
+  uv's lowest-direct resolution on Python 3.11 while resolving transitive
+  dependencies normally.
 - Add `allow_reprojection=True` to opt in to automatic reprojection for vector
   and raster hazards, and `allow_partial_coverage=True` to opt in to partial
   vector results with `population_coverage_fraction` and
