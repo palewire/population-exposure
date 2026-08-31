@@ -1,5 +1,15 @@
 {
   "citation": "Center for International Earth Science Information Network (CIESIN), Columbia University. (2018). Gridded Population of the World, Version 4 (GPWv4): Population Count, Revision 11. NASA SEDAC. https://doi.org/10.7927/H4JW8BX5",
+  "derivation": {
+    "hazard_cells.csv": "Pixel-center coordinates and parent one-degree labels for each finite cell in the 30-arc-second crop; it is not a hazard dataset.",
+    "population_1_deg.tif": "Lossless GeoTIFF window of four complete one-degree source cells; compression changes storage, not raster values.",
+    "population_30_sec.tif": "Lossless GeoTIFF window of the aligned 240 by 240 native source cells; compression changes storage, not raster values."
+  },
+  "evidence": {
+    "category": "same-product cross-resolution consistency",
+    "does_not_prove": "The two GPW grids are separately published outputs of one product, not independent population sources. This fixture does not validate a hazard or exposure result.",
+    "proves": "Exact-coordinate tabular assignment preserves row order and matches native GPW cells, while the grouped native values agree with separately published GPW one-degree cells within the recorded source-precision bound."
+  },
   "fixture": "GPWv4 Revision 11 Iceland 2020 tabular cross-resolution",
   "fixture_files": {
     "hazard_cells.csv": "6a2c440ed7b4c37f83a0140e1f25c5c4fe37a4ceb3e4e91710199cbf128a0728",
@@ -56,6 +66,11 @@
     "hazard_rows": 23183
   },
   "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "reuse": {
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source_record": "https://doi.org/10.7927/H4JW8BX5",
+    "statement": "The source product permits redistribution under CC BY 4.0. Retain the citation when reusing the derived rasters or coordinate table; this repository's MIT license does not replace the source attribution."
+  },
   "published_oracle": {
     "cells": [
       {

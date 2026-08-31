@@ -3,6 +3,15 @@
     "name": "Basankusu",
     "pcode": "CD4107"
   },
+  "derivation": {
+    "hazard.geojson": "Select the one UNOSAT VIIRS layer, repair its invalid geometry with shapely.make_valid, intersect it with OCHA COD-AB district CD4107, then write the resulting valid geometry as GeoJSON.",
+    "population.tif": "Read the registry WorldPop 2020 mosaic in the hazard bounding window with one-cell padding, preserve cell values and georeferencing, then write a DEFLATE-compressed GeoTIFF crop."
+  },
+  "evidence": {
+    "category": "real-data method comparison",
+    "does_not_prove": "The workbook does not provide a population URL, version, hash, or edge rule, so the registry WorldPop mosaic is only a plausible comparator. This fixture does not reproduce or validate UNOSAT's unpublished process.",
+    "proves": "The documented derived geometry and registry WorldPop comparator produce stable coverage-weighted ExactExtract-wrapper and cell-center reference totals, including their measured disagreement with the published workbook value."
+  },
   "fixture": "UNOSAT FL20221125COD Basankusu 2022 maximum surface water",
   "fixture_files": {
     "hazard.geojson": "6cb4d271e8938458ee6d722d9ed46907f698a556978b34a7fbafe5afb90e0245",
@@ -54,20 +63,29 @@
   },
   "sources": {
     "ocha_boundaries": {
+      "citation": "OCHA Democratic Republic of the Congo, OCHA Field Information Services, and HDX. Democratic Republic of the Congo - Subnational Administrative Boundaries, COD-AB v01.",
       "release": "COD-AB v01, valid 2019-09-11",
+      "reuse": "CC BY-IGO 3.0: https://creativecommons.org/licenses/by/3.0/igo/legalcode. Retain OCHA, OCHA FIS, and HDX attribution.",
       "sha256": "a819758bebacb042a167701c84e0a227c96ad9ee769b39dfa9d3ec70977161fd",
       "url": "https://data.humdata.org/dataset/f42132b9-8cc6-4201-b020-9259c56e8868/resource/7514482b-f7af-4654-8ea2-e8a34a6acb6a/download/cod_admin_boundaries.shp.zip"
     },
     "unosat_vector": {
+      "citation": "UNITAR-UNOSAT. FL20221125COD VIIRS maximum satellite observed water extent, 2022-11-28.",
+      "reuse": "No specific reuse license is stated in the linked UNOSAT source artifact. The shipped geometry is a small test-only derivative; its redistribution status is unresolved and the repository's MIT license does not grant reuse rights.",
       "sha256": "1003786f22094ca038b2ab39576614e4ac5d38606f18880257be83d84d819f33",
       "url": "https://unosat.org/static/unosat_filesystem/3456/FL20221125COD_SHP.zip"
     },
     "unosat_workbook": {
+      "citation": "UNITAR-UNOSAT. Population Exposure FL20221125COD, Equateur, Nord-Ubangi, and Sud-Ubangi, Democratic Republic of the Congo.",
+      "reuse": "No specific reuse license is stated in the linked UNOSAT source artifact. It is not shipped; the published values are recorded only for method comparison.",
       "sha256": "e6a68d2b0f1ad8d78c00d126cc04e9fca2ca96c5493727d54219f76b894970c6",
       "url": "https://unosat.org/static/unosat_filesystem/3456/UNOSAT_Population_Exposure_FL20221125COD_November_2019_2020_2021_2022_Equateur_NordUbangi_SudUbangi_RDC_FR.xlsx"
     },
     "worldpop": {
       "catalog_selection": "worldpop-global-1km:2020",
+      "citation": "WorldPop. Unconstrained global mosaics 2000-2020, 1 km resolution, 2020.",
+      "record_url": "https://hub.worldpop.org/geodata/listing?id=64",
+      "reuse": "CC BY 4.0: https://creativecommons.org/licenses/by/4.0/. Retain WorldPop attribution when reusing the cropped raster.",
       "sha256": "d98f9efd911ed4afed696dff9024b20a4e3ec5bf6c0e21f241a26725b7df0866",
       "url": "https://data.worldpop.org/GIS/Population/Global_2000_2020/2020/0_Mosaicked/ppp_2020_1km_Aggregated.tif"
     }

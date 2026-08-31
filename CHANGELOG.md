@@ -53,10 +53,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Report `population_conservation_relative_difference` and
   `population_reprojected` on raster results, and `reprojected` and
   `partial_coverage_allowed` on vector results.
-- Add an offline GPWv4 Revision 11 cross-resolution tabular golden fixture that
-  matches shuffled native cells and independently published one-degree totals.
-- Add a maintainer-only, offline UNOSAT FL20221125COD vector golden fixture
-  and an explicit source-checked regeneration script.
+- Add an offline GPWv4 Revision 11 same-product cross-resolution consistency
+  fixture that matches shuffled native cells and separately published
+  one-degree totals from the same product.
+- Add a maintainer-only, offline UNOSAT FL20221125COD real-data method
+  comparison fixture and an explicit source-checked regeneration script.
 - Add a single-page Sphinx documentation site, published at
   https://palewi.re/docs/population-exposure/.
 - Add `assign_population()` for joining population values to tabular hazard rows
@@ -78,8 +79,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   CIESIN's official one-degree count grid for the same catalog year.
 - Base GPW parity tolerances on each official coarse float32 count's
   representable precision, while retaining low-value and aggregate checks.
-- Add an opt-in USGS PAGER Ridgecrest raster golden reproduction using the
-  exact public hazard grid and a caller-supplied licensed LandScan 2017 file.
+- Add an opt-in USGS PAGER Ridgecrest conditional published-result
+  reproduction using the exact public hazard grid and a caller-supplied
+  licensed LandScan 2017 file.
 
 ### Fixed
 

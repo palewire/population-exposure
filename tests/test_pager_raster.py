@@ -1,4 +1,4 @@
-"""Golden and opt-in live tests for the USGS PAGER Ridgecrest raster."""
+"""USGS PAGER fixture integrity and conditional reproduction checks."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ METADATA_PATH = FIXTURE_DIR / "metadata.json"
 
 
 def test_pager_fixture_records_the_authoritative_grid() -> None:
-    """Keep the derived hazard fixture tied to the exact PAGER product."""
+    """Keep the derived fixture tied to public USGS records, not LandScan."""
     metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
     assert metadata["event_id"] == PAGER_EVENT_ID
     assert metadata["product_timestamp"] == PAGER_PRODUCT_TIMESTAMP
@@ -47,6 +47,11 @@ def test_pager_fixture_records_the_authoritative_grid() -> None:
     assert metadata["source_artifacts"]["pager"]["url"] == PAGER_XML_URL
     assert metadata["source_artifacts"]["pager"]["sha256"] == PAGER_XML_SHA256
     assert metadata["published_exposure"] == list(PUBLISHED_EXPOSURE)
+    assert (
+        metadata["evidence"]["category"] == "conditional published-result reproduction"
+    )
+    assert "does not validate PAGER's methods" in metadata["evidence"]["does_not_prove"]
+    assert "caller-supplied licensed LandScan 2017" in metadata["evidence"]["proves"]
     assert sha256_file(FIXTURE_PATH) == metadata["fixture"]["sha256"]
 
     with rasterio.open(FIXTURE_PATH) as dataset:
@@ -134,7 +139,7 @@ def test_required_pager_attribute_errors_are_explicit() -> None:
 def test_pager_raster_reproduces_published_exposure(
     tmp_path: Path,
 ) -> None:
-    """Compare the PAGER bands using an explicitly supplied LandScan 2017 file."""
+    """Conditionally compare bands; this is not independent PAGER validation."""
     licensed_path = os.environ.get("PAGER_LANDSCAN_2017_PATH")
     if not licensed_path:
         pytest.skip(
