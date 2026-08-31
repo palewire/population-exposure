@@ -12,11 +12,21 @@ import rasterio
 from geopandas.testing import assert_geodataframe_equal
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
-from shapely.geometry import GeometryCollection, LineString, MultiPolygon, Polygon, box
+from shapely.affinity import translate
+from shapely.geometry import (
+    GeometryCollection,
+    LinearRing,
+    LineString,
+    MultiPolygon,
+    Polygon,
+    box,
+)
 
 import population_exposure as pe
+import population_exposure.vector as vector
 from population_exposure import assign_population
 from population_exposure.vector import (
+    _added_geodesic_ring_vertex_count,
     _densified_ring_vertex_count,
     _densify_geographic_geometry,
     _geodesic_area,
@@ -472,9 +482,126 @@ def test_geodesic_area_densification_bounds_a_world_spanning_ring() -> None:
 
 
 def test_geodesic_area_densification_precheck_counts_duplicate_vertices() -> None:
-    geometry = Polygon([(0, 0), (0, 0), (1, 0), (1, 1), (0, 0)])
+    geometry = Polygon([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0), (0, 0)])
 
     densified = _densify_geographic_geometry(geometry)
 
-    assert _densified_ring_vertex_count(geometry.exterior) == 37
-    assert len(densified.exterior.coords) <= 37
+    assert _densified_ring_vertex_count(geometry.exterior) == len(
+        densified.exterior.coords
+    )
+    assert _added_geodesic_ring_vertex_count(geometry.exterior) == 36
+
+
+def test_geodesic_area_densification_counts_added_vertices_with_duplicate_edges(
+    monkeypatch,
+) -> None:
+    geometry = Polygon([(0, 0), (0, 0), (1, 0), (1, 1), (0, 0)])
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 31)
+    monkeypatch.setattr(
+        vector.shapely,
+        "segmentize",
+        lambda *_args, **_kwargs: pytest.fail("segmentize must not run"),
+    )
+
+    with pytest.raises(ValueError, match=r"would add 32 vertices"):
+        _densify_geographic_geometry(geometry)
+
+
+def test_geodesic_area_densification_accepts_detailed_ring_with_no_added_vertices(
+    monkeypatch,
+) -> None:
+    geometry = Polygon([(0, 0), (0.05, 0), (0.05, 0.05), (0, 0.05)])
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 2)
+
+    densified = _densify_geographic_geometry(geometry)
+
+    assert len(geometry.exterior.coords) > 2
+    assert _added_geodesic_ring_vertex_count(geometry.exterior) == 0
+    assert len(densified.exterior.coords) == len(geometry.exterior.coords)
+
+
+def test_geodesic_area_densification_allows_exact_added_vertex_budget(
+    monkeypatch,
+) -> None:
+    geometry = box(0, 0, 0.2, 0.1)
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 2)
+
+    densified = _densify_geographic_geometry(geometry)
+
+    assert _added_geodesic_ring_vertex_count(geometry.exterior) == 2
+    assert len(densified.exterior.coords) == 7
+
+
+def test_geodesic_area_densification_rejects_excess_added_vertices_before_segmentize(
+    monkeypatch,
+) -> None:
+    geometry = box(0, 0, 0.2, 0.1)
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 1)
+
+    def fail_segmentize(*_args, **_kwargs):
+        pytest.fail("segmentize must not run when the added-vertex budget is exceeded")
+
+    monkeypatch.setattr(vector.shapely, "segmentize", fail_segmentize)
+
+    with pytest.raises(
+        ValueError,
+        match=r"would add 2 vertices, exceeding the allowed budget of 1",
+    ):
+        _densify_geographic_geometry(geometry)
+
+
+def test_geodesic_area_densification_shares_budget_across_multipolygon(
+    monkeypatch,
+) -> None:
+    part = box(0, 0, 0.2, 0.1)
+    geometry = MultiPolygon([part, translate(part, xoff=1)])
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 3)
+    monkeypatch.setattr(
+        vector.shapely,
+        "segmentize",
+        lambda *_args, **_kwargs: pytest.fail("segmentize must not run"),
+    )
+
+    with pytest.raises(ValueError, match=r"would add 4 vertices"):
+        _densify_geographic_geometry(geometry)
+
+
+def test_geodesic_area_densification_counts_holes_in_shared_budget(monkeypatch) -> None:
+    geometry = Polygon(
+        box(0, 0, 0.4, 0.3).exterior.coords,
+        holes=[box(0.1, 0.1, 0.3, 0.2).exterior.coords],
+    )
+    monkeypatch.setattr(vector, "_MAX_ADDED_GEODESIC_VERTICES", 11)
+    monkeypatch.setattr(
+        vector.shapely,
+        "segmentize",
+        lambda *_args, **_kwargs: pytest.fail("segmentize must not run"),
+    )
+
+    with pytest.raises(ValueError, match=r"would add 12 vertices"):
+        _densify_geographic_geometry(geometry)
+
+
+@pytest.mark.parametrize(
+    "ring",
+    [
+        LinearRing(),
+        LinearRing([(0, 0), (np.nan, 0), (0, 0)]),
+    ],
+)
+def test_geodesic_area_densification_rejects_invalid_ring(ring) -> None:
+    with pytest.raises(ValueError, match=r"empty|non-finite"):
+        _densified_ring_vertex_count(ring)
+
+
+def test_geodesic_area_densification_rejects_nonpolygonal_segmentize_output(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        vector.shapely,
+        "segmentize",
+        lambda *_args, **_kwargs: LineString([(0, 0), (0.1, 0.1)]),
+    )
+
+    with pytest.raises(RuntimeError, match="did not produce polygonal"):
+        _densify_geographic_geometry(box(0, 0, 0.1, 0.1))

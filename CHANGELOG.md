@@ -32,6 +32,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   failures from the half-Earth geodesic limitation.
 - Split longitude-latitude boundary edges before calculating physical area, so
   ordinary wide features follow their intended straight raster boundaries.
+- Limit only new vertices created while splitting long longitude-latitude edges,
+  across the full geometry, without rejecting already detailed boundaries.
 - Keep boundaries curved when reprojecting. Vector features and raster
   footprints now gain points along every edge until the moved boundary is
   within a tenth of one population cell of the true curve. Moving only the

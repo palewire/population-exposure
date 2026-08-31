@@ -50,7 +50,8 @@ _SURFACE_AREA_CRS = CRS.from_epsg(4326)
 _SURFACE_AREA_TOLERANCE = 1e-7
 _WGS84_GEOD = Geod(ellps="WGS84")
 _MAX_GEODESIC_SEGMENT_DEGREES = 0.1
-_MAX_GEODESIC_RING_VERTICES = 100_000
+# Limit only the temporary vertices created while splitting long geographic edges.
+_MAX_ADDED_GEODESIC_VERTICES = 100_000
 _WGS84_ECCENTRICITY = math.sqrt(1 - (_WGS84_GEOD.b / _WGS84_GEOD.a) ** 2)
 _WGS84_HALF_SURFACE_AREA = (
     math.pi
@@ -391,7 +392,8 @@ def _surface_coverage_fractions(
         ValueError: If a polygon covers half or more of the Earth, which the
             geodesic area routine cannot measure unambiguously; has a
             non-positive or non-finite geodesic area; is empty; has a
-            non-finite ring; or needs more than 100,000 vertices in one ring.
+            non-finite ring; or needs more than 100,000 added vertices while
+            splitting long geographic edges.
 
     Examples:
         >>> import rasterio
@@ -495,7 +497,8 @@ def _geodesic_area(geometry: BaseGeometry) -> float:
         ValueError: If a polygon covers half or more of the Earth, which the
             geodesic area routine cannot measure unambiguously; has a
             non-positive or non-finite geodesic area; is empty; has a
-            non-finite ring; or needs more than 100,000 vertices in one ring.
+            non-finite ring; or needs more than 100,000 added vertices while
+            splitting long geographic edges.
 
     Examples:
         >>> from shapely.geometry import box
@@ -548,7 +551,7 @@ def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
 
     Raises:
         ValueError: If the geometry or a ring is empty, has non-finite
-            coordinates, or would require more than 100,000 vertices.
+            coordinates, or would require more than 100,000 added vertices.
         RuntimeError: If densification does not produce polygonal geometry.
 
     Examples:
@@ -563,15 +566,19 @@ def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
     polygons = (
         geometry.geoms if isinstance(geometry, shapely.MultiPolygon) else (geometry,)
     )
-    for polygon in polygons:
-        for ring in (polygon.exterior, *polygon.interiors):
-            vertices = _densified_ring_vertex_count(ring)
-            if vertices > _MAX_GEODESIC_RING_VERTICES:
-                raise ValueError(
-                    "population coverage cannot be measured because a polygon "
-                    "ring would need more than "
-                    f"{_MAX_GEODESIC_RING_VERTICES:,} vertices."
-                )
+    added_vertices = sum(
+        _added_geodesic_ring_vertex_count(ring)
+        for polygon in polygons
+        for ring in (polygon.exterior, *polygon.interiors)
+    )
+    if added_vertices > _MAX_ADDED_GEODESIC_VERTICES:
+        raise ValueError(
+            "population coverage cannot be measured because densifying "
+            f"geographic boundaries would add {added_vertices:,} vertices, "
+            "exceeding the allowed budget of "
+            f"{_MAX_ADDED_GEODESIC_VERTICES:,}. Simplify unusually long edges "
+            "or split the work into smaller polygons."
+        )
     densified = shapely.segmentize(geometry, _MAX_GEODESIC_SEGMENT_DEGREES)
     if not isinstance(densified, (shapely.Polygon, shapely.MultiPolygon)):
         raise RuntimeError(
@@ -587,7 +594,8 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         ring: Closed WGS84 longitude-latitude ring.
 
     Returns:
-        int: The number of vertices after the 0.1-degree splitting limit.
+        int: The number of vertices Shapely will produce after the 0.1-degree
+            splitting limit.
 
     Raises:
         ValueError: If the ring is empty or has non-finite coordinates.
@@ -596,6 +604,48 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         >>> from shapely.geometry import box
         >>> _densified_ring_vertex_count(box(0, 0, 1, 1).exterior)
         41
+    """
+    segments = _geodesic_ring_segment_counts(ring)
+    return int(segments.sum()) + 1
+
+
+def _added_geodesic_ring_vertex_count(ring: shapely.LinearRing) -> int:
+    """Return how many vertices splitting one ring would add.
+
+    Args:
+        ring: Closed WGS84 longitude-latitude ring.
+
+    Returns:
+        int: The number of additional vertices in Shapely's densified ring.
+
+    Raises:
+        ValueError: If the ring is empty or has non-finite coordinates.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _added_geodesic_ring_vertex_count(box(0, 0, 1, 1).exterior)
+        36
+    """
+    segments = _geodesic_ring_segment_counts(ring)
+    return int(np.maximum(segments - 1, 0).sum())
+
+
+def _geodesic_ring_segment_counts(ring: shapely.LinearRing) -> np.ndarray:
+    """Return the pieces needed to split each edge of one ring.
+
+    Args:
+        ring: Closed WGS84 longitude-latitude ring.
+
+    Returns:
+        numpy.ndarray: The number of 0.1-degree pieces for each edge.
+
+    Raises:
+        ValueError: If the ring is empty or has non-finite coordinates.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _geodesic_ring_segment_counts(box(0, 0, 1, 1).exterior).sum()
+        np.float64(40.0)
     """
     coordinates = np.asarray(ring.coords, dtype=float)
     if coordinates.ndim != 2 or len(coordinates) < 2:
@@ -609,11 +659,7 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         )
     differences = np.diff(coordinates, axis=0)
     lengths = np.hypot(differences[:, 0], differences[:, 1])
-    segments = np.maximum(
-        np.ceil(lengths / _MAX_GEODESIC_SEGMENT_DEGREES),
-        1,
-    )
-    return int(segments.sum()) + 1
+    return np.ceil(lengths / _MAX_GEODESIC_SEGMENT_DEGREES)
 
 
 def _require_coverage(
