@@ -222,6 +222,23 @@ def test_raster_crs_mismatch_raises_and_explains_both_choices(
     assert "allow_reprojection=True" in message
 
 
+def test_cross_crs_outside_raster_requires_opt_in_then_raises_coverage_error(
+    tmp_path: Path,
+) -> None:
+    population = write_population(tmp_path / "population.tif", crs="EPSG:4326")
+    hazard = write_hazard_raster(
+        tmp_path / "hazard.tif",
+        bounds=transform_bounds("EPSG:4326", "EPSG:3857", 10, 10, 12, 12),
+        crs="EPSG:3857",
+        size=2,
+    )
+
+    with pytest.raises(pe.CrsMismatchError):
+        pe.assign_population(hazard, population)
+    with pytest.raises(pe.PartialCoverageError, match="entirely outside"):
+        pe.assign_population(hazard, population, allow_reprojection=True)
+
+
 def test_matching_coordinate_systems_need_no_flag(tmp_path: Path) -> None:
     population = write_population(tmp_path / "population.tif")
     hazard = gpd.GeoDataFrame(geometry=[box(0, 0, 2, 2)], crs="EPSG:3857")

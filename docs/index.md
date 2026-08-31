@@ -233,13 +233,16 @@ complete one:
 
 | Column | Meaning |
 | --- | --- |
-| `population_coverage_fraction` | The share of the feature's area that sits inside the raster, from 0 to 1. It is measured on the population raster's own grid, after any reprojection, so it matches the area the raster can supply. It is not a share of the Earth's surface. |
+| `population_coverage_fraction` | The share of the feature's physical Earth-surface area that sits inside the raster, from 0 to 1. It is not the share of population captured and must not be used to scale or extrapolate the partial population total, because population is not spread evenly. |
 | `population_coverage_complete` | `True` when the share is within `1e-9` of 1. That allowance covers floating-point rounding only, not a real sliver of missing area. |
 
 Coverage is measured against the raster's outer edge. No-data cells inside that
 edge, such as ocean or empty land, still count as covered, so an ordinary
 coastal polygon is not rejected. A feature that falls entirely outside the
-raster is always an error, even with the opt-in.
+raster is always an error, even with the opt-in. The reported physical-area
+share cannot be measured for a polygon that covers half or more of the Earth,
+or is too close to that limit to measure reliably; split it into smaller
+polygons first.
 
 Longitudes are never wrapped for you. A polygon drawn from 170 to 190 degrees
 is half outside a raster that runs from -180 to 180, and the error says so.
@@ -289,11 +292,13 @@ coarse population grids, a few hundred cells across, can exceed it; raise
 | `population_conservation_tolerance` | The difference that was allowed. |
 | `population_reprojected` | `True` when population was warped from another coordinate system. |
 
-Population outside the hazard footprint and population no-data cells are not
-part of that covered total. Hazard no-data and areas without population remain
-masked. Population inputs must be finite, non-negative **counts per cell**;
-rasters explicitly marked as density are rejected instead of being silently
-treated as counts.
+Hazard and population rasters must share some area; a hazard raster entirely
+outside the population raster raises an error with both bounds. Population
+outside the hazard footprint and population no-data cells are not part of that
+covered total. A hazard footprint over population no-data or real zero-count
+cells is valid and returns masked cells or zeroes as appropriate. Population
+inputs must be finite, non-negative **counts per cell**; rasters explicitly
+marked as density are rejected instead of being silently treated as counts.
 
 Paths are opened and closed for each operation. An open Rasterio reader belongs
 to the caller and is never closed by this package. Keep caller-owned hazard and

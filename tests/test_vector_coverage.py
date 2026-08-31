@@ -11,7 +11,7 @@ import pytest
 import rasterio
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
-from shapely.geometry import box
+from shapely.geometry import MultiPolygon, Polygon, box
 
 import population_exposure as pe
 
@@ -20,6 +20,12 @@ if TYPE_CHECKING:
 
 FRACTION = "population_coverage_fraction"
 COMPLETE = "population_coverage_complete"
+GEODESIC_BAND_SHARE = 0.6511126482345896
+GEODESIC_HIGH_LATITUDE_SHARE = 0.7671769664039725
+GEODESIC_MULTIPOLYGON_SHARE = 0.43538408241965043
+GEODESIC_ANTIMERIDIAN_SHARE = 0.4961765226318648
+WEB_MERCATOR_PLANAR_BAND_SHARE = 0.31314967176775305
+SURFACE_COVERAGE_TOLERANCE = 1e-6
 
 
 def write_population(
@@ -169,6 +175,172 @@ def test_no_data_inside_the_footprint_stays_covered(tmp_path: Path) -> None:
     assert result["population"].item() == pytest.approx(9.0)
 
 
+def test_polygon_over_only_nodata_returns_zero(tmp_path: Path) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.array([[-9999.0, 2.0], [3.0, 4.0]]),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[box(0, 1, 1, 2)], crs="EPSG:3857")
+
+    result = pe.assign_population(hazard, population)
+
+    assert result["population"].item() == pytest.approx(0.0)
+    assert FRACTION not in result.columns
+    assert COMPLETE not in result.columns
+
+
+def test_partly_covered_nodata_polygon_path_returns_zero(tmp_path: Path) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.array([[-9999.0, 2.0], [3.0, 4.0]]),
+    )
+    vector_path = tmp_path / "hazard.geojson"
+    gpd.GeoDataFrame(geometry=[box(-1, 1, 1, 2)], crs="EPSG:3857").to_file(
+        vector_path, driver="GeoJSON"
+    )
+
+    result = pe.assign_population(
+        vector_path,
+        population,
+        allow_partial_coverage=True,
+    )
+
+    assert result["population"].item() == pytest.approx(0.0)
+    assert result[FRACTION].item() == pytest.approx(0.5)
+    assert bool(result[COMPLETE].item()) is False
+
+
+def test_coverage_fraction_uses_physical_surface_area(tmp_path: Path) -> None:
+    """The expected share is a fixed WGS84 geodesic calculation, not 40 / 80."""
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 2)),
+        crs="EPSG:4326",
+        transform=from_bounds(0, 0, 2, 40, 2, 2),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[box(0, 0, 2, 80)], crs="EPSG:4326")
+
+    result = pe.assign_population(hazard, population, allow_partial_coverage=True)
+
+    fraction = result[FRACTION].item()
+    assert fraction == pytest.approx(
+        GEODESIC_BAND_SHARE, abs=SURFACE_COVERAGE_TOLERANCE
+    )
+    assert fraction != pytest.approx(0.5, abs=0.01)
+
+
+def test_coverage_fraction_is_independent_of_representation(
+    tmp_path: Path,
+) -> None:
+    geographic_population = write_population(
+        tmp_path / "geographic.tif",
+        values=np.ones((2, 2)),
+        crs="EPSG:4326",
+        transform=from_bounds(0, 0, 2, 40, 2, 2),
+    )
+    projected_bounds = transform_bounds("EPSG:4326", "EPSG:3857", 0, 0, 2, 40)
+    projected_population = write_population(
+        tmp_path / "projected.tif",
+        values=np.ones((2, 2)),
+        transform=from_bounds(*projected_bounds, 2, 2),
+    )
+    geographic_hazard = gpd.GeoDataFrame(
+        geometry=[box(0, 0, 2, 80)],
+        crs="EPSG:4326",
+    )
+    projected_hazard = geographic_hazard.to_crs("EPSG:3857")
+
+    geographic = pe.assign_population(
+        geographic_hazard,
+        geographic_population,
+        allow_partial_coverage=True,
+    )
+    projected = pe.assign_population(
+        projected_hazard,
+        projected_population,
+        allow_partial_coverage=True,
+    )
+
+    geographic_fraction = geographic[FRACTION].item()
+    projected_fraction = projected[FRACTION].item()
+    assert geographic_fraction == pytest.approx(
+        GEODESIC_BAND_SHARE,
+        abs=SURFACE_COVERAGE_TOLERANCE,
+    )
+    assert projected_fraction == pytest.approx(
+        geographic_fraction,
+        abs=SURFACE_COVERAGE_TOLERANCE,
+    )
+    assert projected_fraction != pytest.approx(WEB_MERCATOR_PLANAR_BAND_SHARE)
+
+
+def test_coverage_fraction_handles_high_latitudes(tmp_path: Path) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 2)),
+        crs="EPSG:4326",
+        transform=from_bounds(0, 60, 2, 75, 2, 2),
+    )
+    hazard = gpd.GeoDataFrame(geometry=[box(0, 60, 2, 85)], crs="EPSG:4326")
+
+    result = pe.assign_population(hazard, population, allow_partial_coverage=True)
+
+    assert result[FRACTION].item() == pytest.approx(
+        GEODESIC_HIGH_LATITUDE_SHARE,
+        abs=SURFACE_COVERAGE_TOLERANCE,
+    )
+
+
+def test_coverage_fraction_handles_holes_and_multipolygons(tmp_path: Path) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 2)),
+        crs="EPSG:4326",
+        transform=from_bounds(0, 0, 4, 40, 2, 2),
+    )
+    first = Polygon(
+        box(0, 0, 2, 80).exterior.coords,
+        [tuple(box(0.5, 10, 1.5, 30).exterior.coords)],
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[MultiPolygon([first, box(3, 30, 5, 70)])],
+        crs="EPSG:4326",
+    )
+
+    result = pe.assign_population(hazard, population, allow_partial_coverage=True)
+
+    assert result[FRACTION].item() == pytest.approx(
+        GEODESIC_MULTIPOLYGON_SHARE,
+        abs=SURFACE_COVERAGE_TOLERANCE,
+    )
+
+
+def test_surface_coverage_fraction_is_bounded_for_full_and_tiny_overhangs(
+    tmp_path: Path,
+) -> None:
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 2)),
+        crs="EPSG:4326",
+        transform=from_bounds(0, 0, 2, 80, 2, 2),
+    )
+    full = gpd.GeoDataFrame(geometry=[box(0, 0, 2, 80)], crs="EPSG:4326")
+    overhanging = gpd.GeoDataFrame(
+        geometry=[box(-1e-6, 0, 2, 80)],
+        crs="EPSG:4326",
+    )
+
+    complete = pe.assign_population(full, population, allow_partial_coverage=True)
+    partial = pe.assign_population(
+        overhanging,
+        population,
+        allow_partial_coverage=True,
+    )
+
+    assert complete[FRACTION].item() == pytest.approx(1.0)
+    assert 0.999999 < partial[FRACTION].item() < 1.0
+
+
 def test_longitudes_past_the_raster_edge_are_named_in_the_error(
     tmp_path: Path,
 ) -> None:
@@ -188,7 +360,10 @@ def test_longitudes_past_the_raster_edge_are_named_in_the_error(
 
     opted_in = pe.assign_population(hazard, population, allow_partial_coverage=True)
 
-    assert opted_in[FRACTION].item() == pytest.approx(0.5)
+    assert opted_in[FRACTION].item() == pytest.approx(
+        GEODESIC_ANTIMERIDIAN_SHARE,
+        abs=SURFACE_COVERAGE_TOLERANCE,
+    )
     assert bool(opted_in[COMPLETE].item()) is False
 
 

@@ -18,11 +18,11 @@ class CrsMismatchError(ValueError):
 
 
 class PartialCoverageError(ValueError):
-    """Raised when a hazard feature reaches outside the population raster.
+    """Raised when a hazard geometry lies outside the population raster.
 
-    The package requires complete population coverage by default. This error
-    subclasses ``ValueError``, so existing handlers that catch ``ValueError``
-    still work.
+    The package rejects vector features that are not completely covered and
+    raster hazards with no spatial overlap. This error subclasses
+    ``ValueError``, so existing handlers that catch ``ValueError`` still work.
 
     Examples:
         >>> import population_exposure as pe
