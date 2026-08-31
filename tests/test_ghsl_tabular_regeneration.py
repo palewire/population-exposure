@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import zipfile
 
 import pytest
 
 from scripts.regenerate_ghsl_tabular_golden import (
+    COUNTRY_STATS_ARCHIVE,
     WORKBOOK_COLUMNS,
     _category_for_smod,
     _workbook_header,
+    build_fixture,
     extract_member,
     workbook_totals,
 )
@@ -126,3 +129,90 @@ def test_category_for_smod_rejects_nonzero_unclassified_population() -> None:
         ValueError, match="Unclassified Aruba SMOD cells have non-zero population"
     ):
         _category_for_smod(0, 1.0, {30: "UC"})
+
+
+@pytest.mark.unit
+def test_build_fixture_treats_missing_workbook_categories_as_zero(
+    tmp_path, monkeypatch
+) -> None:
+    """Allow global workbook totals to omit categories for some countries.
+
+    Args:
+        tmp_path: Temporary test directory supplied by pytest.
+        monkeypatch: Pytest helper for temporary attribute replacement.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_build_fixture_treats_missing_workbook_categories_as_zero(None, None)
+    """
+    output_directory = tmp_path / "fixture"
+    gadm_path = tmp_path / "gadm41_ABW_0.json"
+    gadm_path.write_text(
+        (
+            '{"features":[{"properties":{"GID_0":"ABW","COUNTRY":"Aruba"},'
+            '"geometry":{"type":"Polygon","coordinates":[]}}]}'
+        ),
+        encoding="utf-8",
+    )
+    sources = {
+        COUNTRY_STATS_ARCHIVE: tmp_path / COUNTRY_STATS_ARCHIVE,
+        "gadm41_ABW_0.json": gadm_path,
+        "GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss_V2_0.zip": (
+            tmp_path / "GHS_SMOD_E2020_GLOBE_R2023A_4326_30ss_V2_0.zip"
+        ),
+        "GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.zip": (
+            tmp_path / "GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.zip"
+        ),
+    }
+    for path in sources.values():
+        if path.suffix == ".zip":
+            path.write_bytes(b"placeholder")
+
+    monkeypatch.setattr(
+        "scripts.regenerate_ghsl_tabular_golden.workbook_totals",
+        lambda _: {
+            "ABW": {
+                "UC": 56903.19754754787,
+                "UCL": 45177.75497597072,
+                "RUR": 4504.047416000278,
+            },
+            "BES": {"UC": 1.5},
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.regenerate_ghsl_tabular_golden.extract_member",
+        lambda archive, member, destination: destination,
+    )
+    monkeypatch.setattr(
+        "scripts.regenerate_ghsl_tabular_golden.global_totals",
+        lambda smod_path, population_path: {"UC": 10.0, "UCL": 20.0, "RUR": 30.0},
+    )
+    monkeypatch.setattr(
+        "scripts.regenerate_ghsl_tabular_golden._aruba_rows",
+        lambda smod_path, population_path, geometry: (
+            [
+                {
+                    "longitude": "-70.0",
+                    "latitude": "12.5",
+                    "smod_class": "30",
+                    "degurba_l1": "UC",
+                    "population": "1.0",
+                }
+            ],
+            {"UC": 10.0, "UCL": 20.0, "RUR": 30.0},
+            {"width": 1, "height": 1},
+        ),
+    )
+
+    build_fixture(output_directory, sources)
+
+    metadata = json.loads(
+        (output_directory / "metadata.json").read_text(encoding="utf-8")
+    )
+    assert metadata["workbook"]["global"] == {
+        "RUR": 4504.047416000278,
+        "UC": 56904.69754754787,
+        "UCL": 45177.75497597072,
+    }
