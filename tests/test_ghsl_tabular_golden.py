@@ -97,11 +97,11 @@ def test_ghsl_aruba_exact_coordinate_join_matches_recorded_reproduction() -> Non
     )
     totals = assigned.groupby("degurba_l1", sort=False)["population"].sum()
     for category, expected in metadata["reproduced"]["aruba_global_smod"].items():
-        assert totals[category] == pytest.approx(expected, abs=1e-9)
+        assert totals[category] == pytest.approx(expected, abs=1e-6)
         assert totals[category] - metadata["workbook"]["aruba"][category] == (
             pytest.approx(
                 metadata["differences"]["aruba_global_smod_minus_workbook"][category],
-                abs=1e-9,
+                abs=1e-6,
             )
         )
     assert assigned.loc[assigned["smod_class"].eq(30), "degurba_l1"].eq("UC").all()

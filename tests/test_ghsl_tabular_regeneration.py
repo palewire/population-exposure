@@ -16,6 +16,17 @@ from scripts.regenerate_ghsl_tabular_golden import (
 
 @pytest.mark.unit
 def test_workbook_header_uses_column_letters_not_dict_insertion_order() -> None:
+    """Require ordered header validation independent of XML cell ordering.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_workbook_header_uses_column_letters_not_dict_insertion_order()
+    """
     row = {
         "D": "DEGURBA_L1",
         "B": "GADM_ISO",
@@ -40,6 +51,17 @@ def test_workbook_header_uses_column_letters_not_dict_insertion_order() -> None:
 
 @pytest.mark.unit
 def test_workbook_totals_requires_the_expected_workbook_member(tmp_path) -> None:
+    """Report a missing outer workbook member as a schema error.
+
+    Args:
+        tmp_path: Temporary test directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_workbook_totals_requires_the_expected_workbook_member(None)
+    """
     archive_path = tmp_path / "country-stats.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("not-the-workbook.txt", "missing")
@@ -50,11 +72,33 @@ def test_workbook_totals_requires_the_expected_workbook_member(tmp_path) -> None
 
 @pytest.mark.unit
 def test_category_for_smod_skips_unclassified_zero() -> None:
+    """Allow a zero class only when it has no population.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_category_for_smod_skips_unclassified_zero()
+    """
     assert _category_for_smod(0, 0.0, {30: "UC"}) is None
 
 
 @pytest.mark.unit
 def test_category_for_smod_rejects_nonzero_unclassified_population() -> None:
+    """Reject an unclassified cell that carries population.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Examples:
+        >>> test_category_for_smod_rejects_nonzero_unclassified_population()
+    """
     with pytest.raises(
         ValueError, match="Unclassified Aruba SMOD cells have non-zero population"
     ):

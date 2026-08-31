@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 import numpy as np
 import rasterio
 from defusedxml import ElementTree  # deptry: ignore[DEP004]
+from defusedxml.common import DefusedXmlException  # deptry: ignore[DEP004]
 from platformdirs import user_cache_path
 from rasterio.features import geometry_mask
 from rasterio.windows import Window, from_bounds
@@ -334,21 +335,27 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
             raise ValueError("Workbook exceeds its expected extraction limit.")
         workbook_bytes = archive.read(workbook_info)
     with zipfile.ZipFile(io.BytesIO(workbook_bytes)) as archive:
-        workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        workbook = _parse_workbook_xml(
+            _read_workbook_member(archive, "xl/workbook.xml"),
+            description="workbook",
+        )
         sheets = workbook.findall("m:sheets/m:sheet", namespace)
         try:
             pop_l1 = next(sheet for sheet in sheets if sheet.attrib["name"] == "POP_L1")
         except StopIteration as error:
             raise ValueError("Workbook does not contain POP_L1.") from error
-        relationship_id = pop_l1.attrib[f"{{{relation}}}id"]
-        relationships = ElementTree.fromstring(
-            archive.read("xl/_rels/workbook.xml.rels")
+        relationship_id = pop_l1.attrib.get(f"{{{relation}}}id")
+        if relationship_id is None:
+            raise ValueError("Workbook POP_L1 relationship is absent.")
+        relationships = _parse_workbook_xml(
+            _read_workbook_member(archive, "xl/_rels/workbook.xml.rels"),
+            description="workbook relationships",
         )
         target = next(
             (
-                item.attrib["Target"]
+                item.attrib.get("Target")
                 for item in relationships
-                if item.attrib["Id"] == relationship_id
+                if item.attrib.get("Id") == relationship_id
             ),
             None,
         )
@@ -359,7 +366,10 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
             description="Workbook POP_L1 relationship",
         )
         strings = _shared_strings(archive, namespace)
-        sheet = ElementTree.fromstring(archive.read(f"xl/{target_path}"))
+        sheet = _parse_workbook_xml(
+            _read_workbook_member(archive, f"xl/{target_path}"),
+            description="POP_L1 worksheet",
+        )
     rows = list(_worksheet_rows(sheet, strings, namespace))
     if not rows or _workbook_header(rows[0]) != WORKBOOK_COLUMNS:
         raise ValueError("Workbook POP_L1 columns changed.")
@@ -377,7 +387,18 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
 
 
 def _workbook_header(row: dict[str, str]) -> tuple[str, ...]:
-    """Return the POP_L1 header in canonical spreadsheet column order."""
+    """Return the POP_L1 header in canonical spreadsheet column order.
+
+    Args:
+        row: Header cells keyed by their spreadsheet column letters.
+
+    Returns:
+        Header values ordered from A through P.
+
+    Examples:
+        >>> _workbook_header({"B": "GADM_ISO", "A": "GADM_ID"})[:2]
+        ('GADM_ID', 'GADM_ISO')
+    """
     return tuple(row.get(column, "") for column in WORKBOOK_COLUMN_LETTERS)
 
 
@@ -395,8 +416,58 @@ def _shared_strings(archive: zipfile.ZipFile, namespace: dict[str, str]) -> list
         >>> _shared_strings  # doctest: +ELLIPSIS
         <function _shared_strings at ...>
     """
-    shared = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+    try:
+        content = archive.read("xl/sharedStrings.xml")
+    except KeyError:
+        return []
+    shared = _parse_workbook_xml(content, description="shared strings")
     return ["".join(item.itertext()) for item in shared.findall("m:si", namespace)]
+
+
+def _read_workbook_member(archive: zipfile.ZipFile, member: str) -> bytes:
+    """Read one required XLSX member with a clear schema error.
+
+    Args:
+        archive: Open XLSX archive.
+        member: Exact relative member path to read.
+
+    Returns:
+        Member bytes.
+
+    Raises:
+        ValueError: If the required member is absent.
+
+    Examples:
+        >>> _read_workbook_member  # doctest: +ELLIPSIS
+        <function _read_workbook_member at ...>
+    """
+    try:
+        return archive.read(member)
+    except KeyError as error:
+        raise ValueError(f"Workbook lacks required member: {member}") from error
+
+
+def _parse_workbook_xml(content: bytes, *, description: str) -> ElementTree.Element:
+    """Parse one workbook XML member with a clear schema error.
+
+    Args:
+        content: Raw XML bytes read from the XLSX archive.
+        description: Human-readable XML member description for errors.
+
+    Returns:
+        Parsed XML root element.
+
+    Raises:
+        ValueError: If the XML is malformed or contains forbidden constructs.
+
+    Examples:
+        >>> _parse_workbook_xml(b"<root />", description="example").tag
+        'root'
+    """
+    try:
+        return ElementTree.fromstring(content)
+    except (DefusedXmlException, ElementTree.ParseError) as error:
+        raise ValueError(f"Workbook {description} XML is invalid.") from error
 
 
 def _worksheet_rows(
@@ -423,7 +494,12 @@ def _worksheet_rows(
         for cell in row.findall("m:c", namespace):
             value = cell.findtext("m:v", default="", namespaces=namespace)
             if cell.attrib.get("t") == "s":
-                value = strings[int(value)]
+                try:
+                    value = strings[int(value)]
+                except (IndexError, ValueError) as error:
+                    raise ValueError(
+                        "Workbook shared-string index is invalid."
+                    ) from error
             column = "".join(
                 character for character in cell.attrib["r"] if character.isalpha()
             )
