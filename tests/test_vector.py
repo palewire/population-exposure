@@ -17,6 +17,7 @@ from shapely.geometry import LineString, Polygon, box
 import population_exposure as pe
 from population_exposure import assign_population
 from population_exposure.vector import (
+    _densified_ring_vertex_count,
     _densify_geographic_geometry,
     _geodesic_area,
     _ordered_totals,
@@ -443,3 +444,12 @@ def test_geodesic_area_densification_bounds_a_world_spanning_ring() -> None:
     densified = _densify_geographic_geometry(box(-180, -90, 180, 90))
 
     assert len(densified.exterior.coords) == 10_801
+
+
+def test_geodesic_area_densification_precheck_counts_duplicate_vertices() -> None:
+    geometry = Polygon([(0, 0), (0, 0), (1, 0), (1, 1), (0, 0)])
+
+    densified = _densify_geographic_geometry(geometry)
+
+    assert _densified_ring_vertex_count(geometry.exterior) == 37
+    assert len(densified.exterior.coords) <= 37

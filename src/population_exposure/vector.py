@@ -582,7 +582,11 @@ def _densified_ring_vertex_count(ring: shapely.LinearRing) -> int:
         )
     differences = np.diff(coordinates, axis=0)
     lengths = np.hypot(differences[:, 0], differences[:, 1])
-    return int(np.ceil(lengths / _MAX_GEODESIC_SEGMENT_DEGREES).sum()) + 1
+    segments = np.maximum(
+        np.ceil(lengths / _MAX_GEODESIC_SEGMENT_DEGREES),
+        1,
+    )
+    return int(segments.sum()) + 1
 
 
 def _require_coverage(
