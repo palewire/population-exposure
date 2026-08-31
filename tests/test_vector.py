@@ -14,6 +14,7 @@ from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
 from shapely.geometry import LineString, Polygon, box
 
+import population_exposure as pe
 from population_exposure import assign_population
 from population_exposure.vector import _ordered_totals
 
@@ -89,6 +90,49 @@ def test_vector_assignment_preserves_features_and_fractional_coverage(
         "population_band": 1,
         "overlaps_allowed": False,
     }
+
+
+def test_exactextract_fractional_coverage_golden(tmp_path: Path) -> None:
+    """Check ExactExtract's published fractional coverage through the public API.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+    """
+    # Oracle: https://github.com/isciences/exactextractr/blob/4a3d69a1e2e7936e5bd806fe22c29bf13ee042a3/tests/testthat/test_coverage_fraction.R#L20-L37
+    # and https://github.com/isciences/exactextract/blob/3b4926bd0237a6ab20b7f69d1dfc960625c3b3af/test/test_operation.cpp#L97-L117
+    # This is a wrapper conformance golden; ExactExtract's upstream tests
+    # validate its algorithm.
+    values = np.array(
+        [
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0],
+        ]
+    )
+    transform = from_origin(0, 3, 1, 1)
+    population = write_population(
+        tmp_path / "population.tif",
+        values=values,
+        transform=transform,
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[box(0.5, 0.5, 2.5, 2.5)],
+        crs="EPSG:3857",
+    )
+
+    corner_total = 0.25 * (1 + 3 + 7 + 9)
+    edge_total = 0.5 * (2 + 4 + 6 + 8)
+    center_total = 5.0
+    assert corner_total + edge_total + center_total == 20.0
+
+    result = pe.assign_population(hazard, population)
+
+    # This is far below one person and only accommodates floating-point addition.
+    assert result["population"].item() == pytest.approx(20.0, rel=0, abs=1e-9)
+    assert result.attrs["population_assignment"]["method"] == "exactextract_sum"
 
 
 def test_vector_is_reprojected_without_mutating_input(tmp_path: Path) -> None:
