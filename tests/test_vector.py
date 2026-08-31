@@ -12,7 +12,7 @@ import rasterio
 from geopandas.testing import assert_geodataframe_equal
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 import population_exposure as pe
 from population_exposure import assign_population
@@ -430,9 +430,10 @@ def test_geodesic_area_rejects_a_half_earth_polygon() -> None:
         _geodesic_area(box(-180, 0, 180, 90))
 
 
-def test_geodesic_area_rejects_an_empty_polygon() -> None:
-    with pytest.raises(ValueError, match="empty WGS84 ring"):
-        _geodesic_area(Polygon())
+@pytest.mark.parametrize("geometry", [Polygon(), MultiPolygon()])
+def test_geodesic_area_rejects_empty_polygonal_geometry(geometry) -> None:
+    with pytest.raises(ValueError, match="empty WGS84 polygon"):
+        _geodesic_area(geometry)
 
 
 def test_geodesic_area_is_independent_of_ring_orientation() -> None:

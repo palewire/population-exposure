@@ -385,7 +385,7 @@ def _surface_coverage_fractions(
 
     Raises:
         ValueError: If a polygon covers half or more of the Earth, which the
-            geodesic area routine cannot measure unambiguously; has an empty or
+            geodesic area routine cannot measure unambiguously; is empty; has a
             non-finite ring; or needs more than 100,000 vertices in one ring.
 
     Examples:
@@ -531,14 +531,19 @@ def _densify_geographic_geometry(geometry: BaseGeometry) -> BaseGeometry:
         split into short straight pieces.
 
     Raises:
-        ValueError: If a ring is empty or has non-finite coordinates, or would
-            require more than 100,000 vertices.
+        ValueError: If the geometry or a ring is empty, has non-finite
+            coordinates, or would require more than 100,000 vertices.
+        RuntimeError: If densification does not produce polygonal geometry.
 
     Examples:
         >>> from shapely.geometry import box
         >>> len(_densify_geographic_geometry(box(0, 0, 1, 1)).exterior.coords)
         41
     """
+    if geometry.is_empty:
+        raise ValueError(
+            "population coverage cannot be measured for an empty WGS84 polygon."
+        )
     polygons = (
         geometry.geoms if isinstance(geometry, shapely.MultiPolygon) else (geometry,)
     )
