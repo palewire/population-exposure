@@ -8,6 +8,8 @@ Estimate the number of people in any vector polygon or raster cell.
 pip install population-exposure
 ```
 
+Python 3.11 or newer is required.
+
 ## Population registry
 
 The built-in registry provides verified population-count sources. Select one
