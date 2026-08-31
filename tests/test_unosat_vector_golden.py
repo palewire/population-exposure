@@ -1,4 +1,4 @@
-"""Offline golden coverage for a verified UNOSAT vector population result."""
+"""Real-data ExactExtract-wrapper method comparison against a UNOSAT result."""
 
 from __future__ import annotations
 
@@ -66,9 +66,18 @@ def test_extract_members_requires_a_prefix_boundary(tmp_path: Path) -> None:
 
 @pytest.mark.component
 def test_unosat_basankusu_exactextract_golden() -> None:
-    metadata = json.loads((FIXTURE_DIRECTORY / "metadata.json").read_text())
+    """Pin the comparator result; do not claim to reproduce UNOSAT's method."""
+    metadata = json.loads(
+        (FIXTURE_DIRECTORY / "metadata.json").read_text(encoding="utf-8")
+    )
     hazard_path = FIXTURE_DIRECTORY / "hazard.geojson"
     population_path = FIXTURE_DIRECTORY / "population.tif"
+    assert metadata["evidence"]["category"] == "real-data method comparison"
+    assert "plausible comparator" in metadata["evidence"]["does_not_prove"]
+    assert (
+        "does not reproduce or validate UNOSAT"
+        in metadata["evidence"]["does_not_prove"]
+    )
 
     assert (
         hashlib.sha256(hazard_path.read_bytes()).hexdigest()
@@ -125,7 +134,10 @@ def test_unosat_basankusu_exactextract_golden() -> None:
 
 @pytest.mark.component
 def test_unosat_basankusu_cell_center_reference_is_pinned() -> None:
-    metadata = json.loads((FIXTURE_DIRECTORY / "metadata.json").read_text())
+    """Keep the transparent internal reference distinct from an ArcGIS result."""
+    metadata = json.loads(
+        (FIXTURE_DIRECTORY / "metadata.json").read_text(encoding="utf-8")
+    )
     hazard = gpd.read_file(FIXTURE_DIRECTORY / "hazard.geojson", engine="pyogrio")
 
     with rasterio.open(FIXTURE_DIRECTORY / "population.tif") as population:

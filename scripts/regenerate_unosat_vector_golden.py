@@ -249,22 +249,75 @@ def build_fixture(output_directory: Path, sources_directory: Path) -> None:
 
     metadata = {
         "fixture": "UNOSAT FL20221125COD Basankusu 2022 maximum surface water",
+        "evidence": {
+            "category": "real-data method comparison",
+            "proves": (
+                "The documented derived geometry and registry WorldPop comparator "
+                "produce stable coverage-weighted ExactExtract-wrapper and "
+                "cell-center reference totals, including their measured disagreement "
+                "with the published workbook value."
+            ),
+            "does_not_prove": (
+                "The workbook does not provide a population URL, version, hash, or "
+                "edge rule, so the registry WorldPop mosaic is only a plausible "
+                "comparator. This fixture does not reproduce or validate UNOSAT's "
+                "unpublished process."
+            ),
+        },
         "sources": {
             "unosat_workbook": {
+                "citation": (
+                    "UNITAR-UNOSAT. Population Exposure FL20221125COD, Equateur, "
+                    "Nord-Ubangi, and Sud-Ubangi, Democratic Republic of the Congo."
+                ),
+                "reuse": (
+                    "No specific reuse license is stated in the linked UNOSAT source "
+                    "artifact. It is not shipped; the published values are recorded "
+                    "only for method comparison."
+                ),
                 "sha256": UNOSAT_WORKBOOK_SHA256,
                 "url": UNOSAT_WORKBOOK_URL,
             },
             "unosat_vector": {
+                "citation": (
+                    "UNITAR-UNOSAT. FL20221125COD VIIRS maximum satellite observed "
+                    "water extent, 2022-11-28."
+                ),
+                "reuse": (
+                    "No specific reuse license is stated in the linked UNOSAT source "
+                    "artifact. The shipped geometry is a small test-only derivative; "
+                    "its redistribution status is unresolved and the repository's "
+                    "MIT license does not grant reuse rights."
+                ),
                 "sha256": UNOSAT_VECTOR_SHA256,
                 "url": UNOSAT_VECTOR_URL,
             },
             "ocha_boundaries": {
+                "citation": (
+                    "OCHA Democratic Republic of the Congo, OCHA Field Information "
+                    "Services, and HDX. Democratic Republic of the Congo - "
+                    "Subnational Administrative Boundaries, COD-AB v01."
+                ),
                 "release": "COD-AB v01, valid 2019-09-11",
+                "reuse": (
+                    "CC BY-IGO 3.0: "
+                    "https://creativecommons.org/licenses/by/3.0/igo/legalcode. "
+                    "Retain OCHA, OCHA FIS, and HDX attribution."
+                ),
                 "sha256": OCHA_BOUNDARIES_SHA256,
                 "url": OCHA_BOUNDARIES_URL,
             },
             "worldpop": {
                 "catalog_selection": "worldpop-global-1km:2020",
+                "citation": (
+                    "WorldPop. Unconstrained global mosaics 2000-2020, 1 km "
+                    "resolution, 2020."
+                ),
+                "record_url": "https://hub.worldpop.org/geodata/listing?id=64",
+                "reuse": (
+                    "CC BY 4.0: https://creativecommons.org/licenses/by/4.0/. "
+                    "Retain WorldPop attribution when reusing the cropped raster."
+                ),
                 "sha256": WORLDPOP_SHA256,
                 "url": WORLDPOP_URL,
             },
@@ -318,6 +371,18 @@ def build_fixture(output_directory: Path, sources_directory: Path) -> None:
             "published_method_limit": (
                 "The workbook names its sources but does not publish its ArcGIS "
                 "zonal-statistics edge rule."
+            ),
+        },
+        "derivation": {
+            "hazard.geojson": (
+                "Select the one UNOSAT VIIRS layer, repair its invalid geometry with "
+                "shapely.make_valid, intersect it with OCHA COD-AB district CD4107, "
+                "then write the resulting valid geometry as GeoJSON."
+            ),
+            "population.tif": (
+                "Read the registry WorldPop 2020 mosaic in the hazard bounding "
+                "window with one-cell padding, preserve cell values and "
+                "georeferencing, then write a DEFLATE-compressed GeoTIFF crop."
             ),
         },
         "fixture_files": {

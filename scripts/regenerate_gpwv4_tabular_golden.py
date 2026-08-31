@@ -369,24 +369,31 @@ def _write_readme(destination: Path) -> None:
     destination.write_text(
         f"""# {FIXTURE_NAME}
 
-This is a network-free, real-data **tabular assignment** golden fixture. It is
-not a hazard or exposure result. It verifies that
+This is a network-free, real-data **same-product cross-resolution consistency**
+fixture. It is not a hazard or exposure result, and its two grids are not
+independent population sources. It verifies that
 `population_exposure.assign_population` matches native GPW Population Count
 values to exact coordinate rows, preserves hazard-row ordering, and reproduces
-independently published one-degree CIESIN values after grouping by
+separately published one-degree CIESIN values after grouping by
 `parent_1_degree_cell`.
 
 The fixture contains a 2 by 2 block of complete one-degree cells around
 Iceland (global rows 25--26, columns 157--158) and its matching 240 by 240
 30-arc-second crop. Its coordinate table contains the crop's finite cells;
 the source nodata cells remain in the raster. Both are lossless float32
-GeoTIFF derivatives of GPWv4 Revision 11 Population Count 2020 and are
-distributed under CC BY 4.0.
+GeoTIFF derivatives of GPWv4 Revision 11 Population Count 2020. The source
+product is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/);
+reuse requires the attribution in `metadata.json`. That license applies to the
+two rasters and the coordinate table derived from them, not because this
+repository is MIT licensed.
 
-The 30-arc-second input is {FINE_URL}. The independent published one-degree
-oracle is {COARSE_URL}. Both archives need an Earthdata token only during
-regeneration. GPW documentation describes the coarse Population Count grids
-as aggregations of the native cells. `{DOWNLOAD_TIMEOUT_NOTE}`
+The [30-arc-second input]({FINE_URL})
+and [one-degree grid]({COARSE_URL})
+are separately published outputs of the cited GPW product. Both archives need
+an Earthdata token only during regeneration. GPW documentation describes the
+coarse Population Count grids as aggregations of native cells. The check
+therefore tests agreement within one product, not agreement with an outside
+estimate. `{DOWNLOAD_TIMEOUT_NOTE}`
 
 Regenerate only after deliberately accepting the authenticated 405 MB fine
 archive:
@@ -535,7 +542,31 @@ def build_fixture(output_directory: Path, cache_directory: Path) -> None:
                     "Exact-coordinate tabular population assignment validation; "
                     "not a hazard or exposure result."
                 ),
+                "evidence": {
+                    "category": "same-product cross-resolution consistency",
+                    "proves": (
+                        "Exact-coordinate tabular assignment preserves row order and "
+                        "matches native GPW cells, while the grouped native values "
+                        "agree with separately published GPW one-degree cells within "
+                        "the recorded source-precision bound."
+                    ),
+                    "does_not_prove": (
+                        "The two GPW grids are separately published outputs of one "
+                        "product, not independent population sources. This fixture "
+                        "does not validate a hazard or exposure result."
+                    ),
+                },
                 "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+                "reuse": {
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "source_record": "https://doi.org/10.7927/H4JW8BX5",
+                    "statement": (
+                        "The source product permits redistribution under CC BY 4.0. "
+                        "Retain the citation when reusing the derived rasters or "
+                        "coordinate table; this repository's MIT license does not "
+                        "replace the source attribution."
+                    ),
+                },
                 "citation": (
                     "Center for International Earth Science Information Network "
                     "(CIESIN), Columbia University. (2018). Gridded Population of "
@@ -594,6 +625,21 @@ def build_fixture(output_directory: Path, cache_directory: Path) -> None:
                     "coordinate_decimal_places": COORDINATE_DECIMAL_PLACES,
                     "hazard_rows": len(cells),
                     "fine_masked_cells": int(fine_mask.sum()),
+                },
+                "derivation": {
+                    "population_30_sec.tif": (
+                        "Lossless GeoTIFF window of the aligned 240 by 240 native "
+                        "source cells; compression changes storage, not raster values."
+                    ),
+                    "population_1_deg.tif": (
+                        "Lossless GeoTIFF window of four complete one-degree source "
+                        "cells; compression changes storage, not raster values."
+                    ),
+                    "hazard_cells.csv": (
+                        "Pixel-center coordinates and parent one-degree labels for "
+                        "each finite cell in the 30-arc-second crop; it is not a "
+                        "hazard dataset."
+                    ),
                 },
                 "published_oracle": {
                     "resolution": "1 degree",

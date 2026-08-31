@@ -110,7 +110,11 @@ def test_vector_assignment_preserves_features_and_fractional_coverage(
 
 
 def test_exactextract_fractional_coverage_golden(tmp_path: Path) -> None:
-    """Check ExactExtract's published fractional coverage through the public API.
+    """Check public-wrapper conformance with ExactExtract's published example.
+
+    This synthetic case verifies how this package passes data to ExactExtract.
+    It does not independently validate ExactExtract's algorithm or a real-world
+    population result.
 
     Args:
         tmp_path: Temporary directory supplied by pytest.

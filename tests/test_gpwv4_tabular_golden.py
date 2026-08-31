@@ -1,4 +1,4 @@
-"""Offline golden validation for GPWv4 tabular population assignment."""
+"""Same-product GPW cross-resolution consistency checks for tabular assignment."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def _population_frame(path: Path, decimal_places: int) -> pd.DataFrame:
 
 @pytest.mark.component
 def test_gpwv4_iceland_tabular_cross_resolution_golden() -> None:
-    """Match shuffled GPW cells and reproduce each published one-degree total."""
+    """Check tabular assignment against separately published GPW grids only."""
     metadata = json.loads(
         (FIXTURE_DIRECTORY / "metadata.json").read_text(encoding="utf-8")
     )
@@ -68,6 +68,13 @@ def test_gpwv4_iceland_tabular_cross_resolution_golden() -> None:
         "Exact-coordinate tabular population assignment validation; "
         "not a hazard or exposure result."
     )
+    assert (
+        metadata["evidence"]["category"] == "same-product cross-resolution consistency"
+    )
+    assert (
+        "not independent population sources" in metadata["evidence"]["does_not_prove"]
+    )
+    assert "separately published GPW one-degree cells" in metadata["evidence"]["proves"]
     assert metadata["source_grid"]["crs"] == "EPSG:4326"
     assert metadata["source_grid"]["dtype"] == "float32"
     assert metadata["source_grid"]["cells_per_coarse_side"] == 120
