@@ -385,7 +385,8 @@ def _surface_coverage_fractions(
 
     Raises:
         ValueError: If a polygon covers half or more of the Earth, which the
-            geodesic area routine cannot measure unambiguously.
+            geodesic area routine cannot measure unambiguously; has an empty or
+            non-finite ring; or needs more than 100,000 vertices in one ring.
 
     Examples:
         >>> import rasterio
