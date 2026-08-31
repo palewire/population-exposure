@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from population_exposure import assign_population
-from scripts.regenerate_ghsl_tabular_golden import _safe_relative_path
+from scripts.regenerate_ghsl_tabular_golden import _safe_relative_path, geometry_bounds
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "data" / "ghsl_aruba_tabular"
 
@@ -137,3 +137,20 @@ def test_ghsl_aruba_join_rejects_missing_and_nonfinite_population() -> None:
     nonfinite.iloc[0, nonfinite.columns.get_loc("population")] = np.nan
     with pytest.raises(ValueError, match="Population values must be finite"):
         assign_population(hazard, nonfinite)
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "Polygon", "coordinates": None},
+        {"type": "MultiPolygon", "coordinates": None},
+        {"type": "Polygon", "coordinates": [[[None, 1], [2, 3]]]},
+        {"type": "Polygon", "coordinates": [[[1], [2]]]},
+    ],
+)
+def test_geometry_bounds_raises_value_error_for_malformed_coordinates(
+    geometry: dict[str, object],
+) -> None:
+    """geometry_bounds raises ValueError for malformed/missing coordinates."""
+    with pytest.raises(ValueError):
+        geometry_bounds(geometry)

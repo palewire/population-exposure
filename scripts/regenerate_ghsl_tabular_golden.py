@@ -862,16 +862,34 @@ def geometry_bounds(geometry: dict[str, object]) -> tuple[float, float, float, f
     geometry_type = geometry.get("type")
     coordinates = geometry.get("coordinates")
     if geometry_type == "Polygon":
-        polygons = [coordinates]
+        if not isinstance(coordinates, list):
+            raise ValueError(
+                f"GADM Polygon geometry has invalid coordinates: {coordinates!r}"
+            )
+        polygons: list[object] = [coordinates]
     elif geometry_type == "MultiPolygon":
+        if not isinstance(coordinates, list):
+            raise ValueError(
+                f"GADM MultiPolygon geometry has invalid coordinates: {coordinates!r}"
+            )
         polygons = coordinates
     else:
         raise ValueError(f"Unsupported GADM geometry type: {geometry_type!r}")
-    pairs = [pair for polygon in polygons for ring in polygon for pair in ring]
+    try:
+        pairs = [pair for polygon in polygons for ring in polygon for pair in ring]
+    except TypeError as exc:
+        raise ValueError(
+            f"GADM geometry contains malformed coordinate rings: {exc}"
+        ) from exc
     if not pairs:
         raise ValueError("GADM geometry has no coordinates.")
-    longitudes = [float(pair[0]) for pair in pairs]
-    latitudes = [float(pair[1]) for pair in pairs]
+    try:
+        longitudes = [float(pair[0]) for pair in pairs]
+        latitudes = [float(pair[1]) for pair in pairs]
+    except (TypeError, IndexError) as exc:
+        raise ValueError(
+            f"GADM geometry contains malformed coordinate pairs: {exc}"
+        ) from exc
     return min(longitudes), min(latitudes), max(longitudes), max(latitudes)
 
 
