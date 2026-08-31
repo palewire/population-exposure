@@ -101,9 +101,10 @@ class SourceSpec:
             official_url=self.url_template.format(year=year),
             doi=doi,
             license=self.license,
-            citation=self.citation_by_year.get(
-                year,
-                self.citation_template.format(year=year),
+            citation=(
+                self.citation_by_year[year]
+                if year in self.citation_by_year
+                else self.citation_template.format(year=year)
             ),
             units=self.units,
             meaning=self.meaning,
@@ -414,9 +415,9 @@ LANDSCAN = SourceSpec(
         {
             2024: (
                 "Lebakula, V., Gonzales, J., Stipek, C., Tsybina, E., Zimmer, A., "
-                "Nukavarapu, N., Jeong, B., Reynolds, B., Kaufman, J., Fan, J., "
-                "Martin, A., Buck, W., Basford, S., Faxon, A., Meade, S., and "
-                "Urban, M. (2024). LandScan 2024. Oak Ridge National Laboratory. "
+                "Nukavarapu, N., Byeonghwa, J., Reynolds, B., Kaufman, J., Fan, J., "
+                "Martin, A., Buck, W., Basford, S., Faxon, A., Meade, S., & "
+                "Urban, M. (2024). LandScan 2024 [Dataset]. Oak Ridge National Laboratory. "
                 "https://doi.org/10.48690/1532445"
             ),
         }

@@ -194,8 +194,13 @@ def test_list_and_info_expose_curated_source_facts() -> None:
     assert landscan_2024.meaning == "ambient"
     assert landscan_2024.doi == "10.48690/1532445"
     assert "redistribution" in landscan_2024.license
-    assert "LandScan 2024" in landscan_2024.citation
-    assert landscan_2024.citation.endswith("https://doi.org/10.48690/1532445")
+    assert landscan_2024.citation == (
+        "Lebakula, V., Gonzales, J., Stipek, C., Tsybina, E., Zimmer, A., "
+        "Nukavarapu, N., Byeonghwa, J., Reynolds, B., Kaufman, J., Fan, J., "
+        "Martin, A., Buck, W., Basford, S., Faxon, A., Meade, S., & Urban, M. "
+        "(2024). LandScan 2024 [Dataset]. Oak Ridge National Laboratory. "
+        "https://doi.org/10.48690/1532445"
+    )
     assert any("registrant's responsibility" in note for note in landscan_2024.notes)
 
 
