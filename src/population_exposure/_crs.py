@@ -137,7 +137,7 @@ def require_matching_crs(
 def boundary_tolerance(population: DatasetReader) -> float:
     """Return how far a transformed boundary may stray from the true curve.
 
-    The allowance is a quarter of the shorter side of one population cell, so
+    The allowance is a tenth of the shorter side of one population cell, so
     accuracy is measured against the grid the population is read from rather
     than a fixed number of points.
 
@@ -154,7 +154,7 @@ def boundary_tolerance(population: DatasetReader) -> float:
         >>> import rasterio
         >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
         ...     boundary_tolerance(raster)
-        0.25
+        0.1
     """
     transform = population.transform
     column = math.hypot(transform.a, transform.d)

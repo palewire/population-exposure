@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import geopandas as gpd
+import numpy as np
 import pytest
+import rasterio
 from pyproj import CRS
+from rasterio.transform import from_origin
 from shapely.geometry import box
 
 from population_exposure._crs import (
     _crs_name,
     as_crs,
+    boundary_tolerance,
     require_matching_crs,
     transform_geometries,
 )
 from population_exposure._errors import CrsMismatchError
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_missing_coordinate_system_is_named() -> None:
@@ -66,3 +75,26 @@ def test_impossible_accuracy_fails_loudly() -> None:
             target_crs="ESRI:54009",
             tolerance=1e-9,
         )
+
+
+def test_boundary_allowance_is_a_tenth_of_the_shorter_cell_side(
+    tmp_path: Path,
+) -> None:
+    """The promised accuracy has to match what the code actually allows."""
+    path = tmp_path / "population.tif"
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=2,
+        width=2,
+        count=1,
+        dtype="float64",
+        crs="EPSG:3857",
+        transform=from_origin(0, 8, 5.0, 2.0),
+        nodata=-9999.0,
+    ) as dataset:
+        dataset.write(np.ones((2, 2)), 1)
+
+    with rasterio.open(path) as dataset:
+        assert boundary_tolerance(dataset) == pytest.approx(0.2)
