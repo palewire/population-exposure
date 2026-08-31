@@ -367,9 +367,10 @@ def workbook_totals(archive_path: Path) -> dict[str, dict[str, float]]:
     for row in rows[1:]:
         category = row.get("D")
         if category in L1_CODES:
-            if "B" not in row or "N" not in row:
+            missing = [col for col in ("B", "N") if col not in row]
+            if missing:
                 raise ValueError(
-                    "Workbook POP_L1 row is missing required columns B or N."
+                    f"Workbook POP_L1 row is missing required column(s): {missing}."
                 )
             totals[row["B"]][category] += float(row["N"])
     return {country: dict(values) for country, values in totals.items()}
