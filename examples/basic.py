@@ -4,6 +4,8 @@ import pandas as pd
 
 import population_exposure as pe
 
+population_source = "illustrative counts"
+population_year = "not applicable"
 hazard = pd.DataFrame(
     {
         "cell": ["A", "B", "C", "D"],
@@ -18,6 +20,7 @@ population = pd.DataFrame(
     }
 )
 
+print(f"{population_source} ({population_year}):")
 exposed = pe.assign_population(hazard, population, cell_columns="cell")
 print(exposed)
 print(exposed.groupby("severity")["population"].sum())

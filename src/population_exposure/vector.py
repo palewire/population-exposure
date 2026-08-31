@@ -75,7 +75,11 @@ def assign_vector_population(
     allow_reprojection: bool,
     allow_partial_coverage: bool,
 ) -> gpd.GeoDataFrame:
-    """Assign coverage-aware population sums to polygon features.
+    """Assign estimated source/year population to polygon features.
+
+    Each population cell contributes according to the share of its area covered
+    by a feature. The result represents the selected source and reference year;
+    it is not a count of observed people or event-time presence.
 
     Args:
         hazard: A GeoDataFrame of polygons, or a path to a vector file.
@@ -83,8 +87,8 @@ def assign_vector_population(
             a catalog selection.
         population_column: Name of the population column to append.
         allow_overlaps: True to allow overlapping polygons.
-        allow_reprojection: True to transform the hazard onto the population
-            coordinate system automatically.
+        allow_reprojection: True to transform the hazard geometry to the
+            population coordinate system automatically.
         allow_partial_coverage: True to allow features that reach outside the
             population raster, and to report each feature's approximate physical
             surface-area share that was covered. This fraction is not the share

@@ -46,7 +46,13 @@ CROSS_CRS_CONSERVATION_TOLERANCE = 1e-3
 
 @dataclass(frozen=True, slots=True)
 class RasterAssignment:
-    """Lazy, window-readable hazard and aligned population raster cells."""
+    """Lazy hazard cells and population represented on the hazard grid.
+
+    Population values are estimated from the selected source and reference year
+    by coverage-weighted sum resampling. The conservation metadata is a
+    numerical alignment check, not source validation or an uncertainty
+    interval.
+    """
 
     shape: tuple[int, int]
     crs: CRS
@@ -62,7 +68,7 @@ class RasterAssignment:
         self,
         window: Window | None = None,
     ) -> tuple[np.ma.MaskedArray, np.ma.MaskedArray]:
-        """Read hazard and aligned population values for the same cells."""
+        """Read hazard and represented population values for the same cells."""
         with open_raster(self._hazard, parameter="hazard") as hazard:
             hazard_values = hazard.read(self.hazard_band, window=window, masked=True)
         with open_raster(self._population, parameter="population") as population:
@@ -78,7 +84,7 @@ class RasterAssignment:
     def iter_blocks(
         self,
     ) -> Iterator[tuple[Window, np.ma.MaskedArray, np.ma.MaskedArray]]:
-        """Yield aligned hazard and population arrays one bounded window at a time."""
+        """Yield hazard and represented population arrays in bounded windows."""
         with (
             open_raster(self._hazard, parameter="hazard") as hazard,
             open_raster(self._population, parameter="population") as population,
@@ -119,11 +125,11 @@ def assign_raster_population(
             covered and aligned population totals, or None to use the default
             for the situation.
         allow_reprojection: True to warp population from another coordinate
-            system onto the hazard grid automatically.
+            system onto the hazard coordinate system and grid automatically.
 
     Returns:
-        RasterAssignment: A lazy result that reads hazard and aligned
-        population cells together.
+        RasterAssignment: A lazy result that reads hazard cells and the
+        population represented by the selected source and reference year.
 
     Raises:
         population_exposure.CrsMismatchError: If the coordinate systems

@@ -40,6 +40,7 @@ with TemporaryDirectory() as directory:
     ) as population:
         population.write(np.array([[100, 200], [300, 400]], dtype=float), 1)
 
+    print("illustrative population raster (reference year: not applicable):")
     exposed = pe.assign_population(hazard_path, population_path)
     hazard_values, population_values = exposed.read()
     print(hazard_values)
