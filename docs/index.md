@@ -1,6 +1,6 @@
 # population-exposure
 
-Estimate the number of people in hazard tables, vector polygons, or raster cells.
+Estimate the number of people in any vector polygon or raster cell.
 
 ## Installation
 
