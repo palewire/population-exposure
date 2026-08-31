@@ -204,7 +204,9 @@ def cached_source(source: Source, cache_directory: Path) -> Path:
         ):
             content_length = response.headers.get("Content-Length")
             try:
-                actual_bytes = int(content_length) if content_length is not None else None
+                actual_bytes = (
+                    int(content_length) if content_length is not None else None
+                )
             except (ValueError, TypeError) as exc:
                 raise ValueError(
                     f"Non-integer Content-Length for {source.url}: {content_length!r}."
