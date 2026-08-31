@@ -485,7 +485,8 @@ def _geodesic_area(geometry: BaseGeometry) -> float:
 
     Raises:
         ValueError: If a polygon covers half or more of the Earth, which the
-            geodesic area routine cannot measure unambiguously.
+            geodesic area routine cannot measure unambiguously; is empty; has a
+            non-finite ring; or needs more than 100,000 vertices in one ring.
 
     Examples:
         >>> from shapely.geometry import box
