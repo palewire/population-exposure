@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 import geopandas as gpd
 import numpy as np
@@ -39,6 +39,7 @@ def assign_population(
     *,
     cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
+    antimeridian: Literal["error", "split"] = "error",
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
@@ -55,6 +56,7 @@ def assign_population(
     *,
     cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
+    antimeridian: Literal["error", "split"] = "error",
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
@@ -71,6 +73,7 @@ def assign_population(
     *,
     cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
+    antimeridian: Literal["error", "split"] = "error",
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
@@ -87,6 +90,7 @@ def assign_population(
     *,
     cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
+    antimeridian: Literal["error", "split"] = "error",
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
@@ -102,6 +106,7 @@ def assign_population(
     *,
     cell_columns: str | Sequence[str] = ("longitude", "latitude"),
     population_column: str = "population",
+    antimeridian: Literal["error", "split"] = "error",
     allow_overlaps: bool = False,
     allow_reprojection: bool = False,
     allow_partial_coverage: bool = False,
@@ -138,6 +143,10 @@ def assign_population(
         cell_columns: One key column, or a sequence of key columns, used only
             for table assignment.
         population_column: Name of the population column to append.
+        antimeridian: For geographic vector hazards, ``"error"`` keeps the safe
+            default and rejects unsplit seam crossings. ``"split"`` interprets
+            those edges as the shorter route and normalizes temporary assignment
+            geometry. Returned geometry is unchanged.
         allow_overlaps: True to allow overlapping vector polygons. It applies
             only to vector hazards.
         allow_reprojection: True to transform vector geometry to the population
@@ -194,6 +203,7 @@ def assign_population(
     """
     _validate_common_options(
         population_column=population_column,
+        antimeridian=antimeridian,
         allow_overlaps=allow_overlaps,
         allow_reprojection=allow_reprojection,
         allow_partial_coverage=allow_partial_coverage,
@@ -211,6 +221,7 @@ def assign_population(
             hazard,
             population,
             population_column=population_column,
+            antimeridian=antimeridian,
             allow_overlaps=allow_overlaps,
             allow_reprojection=allow_reprojection,
             allow_partial_coverage=allow_partial_coverage,
@@ -220,7 +231,10 @@ def assign_population(
     if isinstance(hazard, DatasetReader):
         if isinstance(population, pd.DataFrame):
             raise TypeError("Raster hazards require a population raster.")
-        _reject_vector_only_options(allow_overlaps=allow_overlaps)
+        _reject_vector_only_options(
+            antimeridian=antimeridian,
+            allow_overlaps=allow_overlaps,
+        )
         return assign_raster_population(
             hazard,
             population,
@@ -244,6 +258,7 @@ def assign_population(
                 path,
                 population,
                 population_column=population_column,
+                antimeridian=antimeridian,
                 allow_overlaps=allow_overlaps,
                 allow_reprojection=allow_reprojection,
                 allow_partial_coverage=allow_partial_coverage,
@@ -252,7 +267,10 @@ def assign_population(
         if suffix in _RASTER_SUFFIXES:
             if isinstance(population, pd.DataFrame):
                 raise TypeError("Raster hazards require a population raster.")
-            _reject_vector_only_options(allow_overlaps=allow_overlaps)
+            _reject_vector_only_options(
+                antimeridian=antimeridian,
+                allow_overlaps=allow_overlaps,
+            )
             return assign_raster_population(
                 path,
                 population,
@@ -273,7 +291,10 @@ def assign_population(
             raise TypeError(
                 "population must be a pandas DataFrame for tabular hazards."
             )
-        _reject_vector_only_options(allow_overlaps=allow_overlaps)
+        _reject_vector_only_options(
+            antimeridian=antimeridian,
+            allow_overlaps=allow_overlaps,
+        )
         _reject_spatial_only_options(
             allow_partial_coverage=allow_partial_coverage,
             allow_missing_population_data=allow_missing_population_data,
@@ -363,6 +384,7 @@ def _assign_tabular_population(
 def _validate_common_options(
     *,
     population_column: str,
+    antimeridian: Literal["error", "split"],
     allow_overlaps: bool,
     allow_reprojection: bool,
     allow_partial_coverage: bool,
@@ -374,6 +396,7 @@ def _validate_common_options(
 
     Args:
         population_column: Name of the population column to append.
+        antimeridian: How vector antimeridian crossings should be handled.
         allow_overlaps: True to allow overlapping vector polygons.
         allow_reprojection: True to allow automatic reprojection.
         allow_partial_coverage: True to allow partly covered hazards.
@@ -394,6 +417,7 @@ def _validate_common_options(
     Examples:
         >>> _validate_common_options(
         ...     population_column="population",
+        ...     antimeridian="error",
         ...     allow_overlaps=False,
         ...     allow_reprojection=False,
         ...     allow_partial_coverage=False,
@@ -404,6 +428,8 @@ def _validate_common_options(
     """
     if not isinstance(population_column, str) or not population_column:
         raise ValueError("population_column must be a non-empty column name.")
+    if not isinstance(antimeridian, str) or antimeridian not in {"error", "split"}:
+        raise ValueError("antimeridian must be 'error' or 'split'.")
     for name, value in (
         ("allow_overlaps", allow_overlaps),
         ("allow_reprojection", allow_reprojection),
@@ -425,10 +451,15 @@ def _validate_common_options(
         raise ValueError("conservation_tolerance must be finite and non-negative.")
 
 
-def _reject_vector_only_options(*, allow_overlaps: bool) -> None:
+def _reject_vector_only_options(
+    *,
+    antimeridian: Literal["error", "split"],
+    allow_overlaps: bool,
+) -> None:
     """Reject vector-only options passed with another hazard type.
 
     Args:
+        antimeridian: How vector antimeridian crossings should be handled.
         allow_overlaps: True to allow overlapping vector polygons.
 
     Returns:
@@ -438,8 +469,13 @@ def _reject_vector_only_options(*, allow_overlaps: bool) -> None:
         ValueError: If the option is turned on.
 
     Examples:
-        >>> _reject_vector_only_options(allow_overlaps=False)
+        >>> _reject_vector_only_options(
+        ...     antimeridian="error",
+        ...     allow_overlaps=False,
+        ... )
     """
+    if antimeridian != "error":
+        raise ValueError("antimeridian applies only to vector hazards.")
     if allow_overlaps:
         raise ValueError("allow_overlaps applies only to vector hazards.")
 

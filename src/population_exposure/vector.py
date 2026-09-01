@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 import geopandas as gpd
 import numpy as np
@@ -17,6 +17,7 @@ from population_exposure._crs import (
     boundary_tolerance,
     reject_wrapped_geometries,
     require_matching_crs,
+    split_wrapped_geometries,
     transform_geometries,
 )
 from population_exposure._errors import MissingPopulationDataError, PartialCoverageError
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
 _ROW_ID = "__population_exposure_row__"
 _POLYGON_TYPES = frozenset({"Polygon", "MultiPolygon"})
+AntimeridianMode: TypeAlias = Literal["error", "split"]
 
 COVERAGE_FRACTION_COLUMN = "population_coverage_fraction"
 COVERAGE_COMPLETE_COLUMN = "population_coverage_complete"
@@ -77,6 +79,7 @@ def assign_vector_population(
     population: RasterSource,
     *,
     population_column: str,
+    antimeridian: AntimeridianMode,
     allow_overlaps: bool,
     allow_reprojection: bool,
     allow_partial_coverage: bool,
@@ -99,6 +102,8 @@ def assign_vector_population(
         population: A population-count raster path, an open Rasterio reader, or
             a catalog selection.
         population_column: Name of the population column to append.
+        antimeridian: ``"error"`` to reject wrapped boundaries, or ``"split"``
+            to normalize them for assignment.
         allow_overlaps: True to allow overlapping polygons.
         allow_reprojection: True to transform the hazard geometry to the
             population coordinate system automatically.
@@ -134,6 +139,7 @@ def assign_vector_population(
         ...     hazard,
         ...     "population.tif",
         ...     population_column="population",
+        ...     antimeridian="error",
         ...     allow_overlaps=False,
         ...     allow_reprojection=False,
         ...     allow_partial_coverage=False,
@@ -144,11 +150,9 @@ def assign_vector_population(
     _validate_vector(
         source,
         population_column=population_column,
+        antimeridian=antimeridian,
         allow_partial_coverage=allow_partial_coverage,
     )
-    if not allow_overlaps:
-        _reject_overlaps(source)
-
     from population_exposure.populations._api import (
         metadata_for_reader,
         resolve_for_assignment,
@@ -171,7 +175,14 @@ def assign_vector_population(
             source,
             population_reader,
             reprojecting=reprojecting,
+            antimeridian=antimeridian,
         )
+        if (antimeridian == "split" or reprojecting) and not shapely.is_valid(
+            np.asarray(geometries, dtype=object)
+        ).all():
+            raise ValueError("hazard vector contains invalid geometry.")
+        if not allow_overlaps:
+            _reject_overlaps(geometries)
         population_total = validate_population_raster(population_reader)
         population_metadata = metadata_for_reader(
             resolved_population,
@@ -264,6 +275,7 @@ def _validate_vector(
     hazard: gpd.GeoDataFrame,
     *,
     population_column: str,
+    antimeridian: AntimeridianMode,
     allow_partial_coverage: bool,
 ) -> None:
     """Validate polygon geometry and output-column safety.
@@ -271,6 +283,7 @@ def _validate_vector(
     Args:
         hazard: The loaded hazard features.
         population_column: Name of the population column to append.
+        antimeridian: How wrapped geographic boundaries should be handled.
         allow_partial_coverage: True when coverage columns will be added
             alongside the data-support columns.
 
@@ -288,6 +301,7 @@ def _validate_vector(
         >>> _validate_vector(
         ...     hazard,
         ...     population_column="population",
+        ...     antimeridian="error",
         ...     allow_partial_coverage=False,
         ... )
     """
@@ -319,7 +333,7 @@ def _validate_vector(
         raise ValueError("hazard vector contains missing geometry.")
     if hazard.geometry.is_empty.any():
         raise ValueError("hazard vector contains empty geometry.")
-    if not hazard.geometry.is_valid.all():
+    if antimeridian == "error" and not hazard.geometry.is_valid.all():
         raise ValueError("hazard vector contains invalid geometry.")
     non_polygon = ~hazard.geom_type.isin(_POLYGON_TYPES)
     if non_polygon.any():
@@ -335,6 +349,7 @@ def _geometries_on_population_grid(
     population: DatasetReader,
     *,
     reprojecting: bool,
+    antimeridian: AntimeridianMode,
 ) -> list[BaseGeometry]:
     """Return hazard geometry expressed in the population coordinate system.
 
@@ -343,6 +358,7 @@ def _geometries_on_population_grid(
         population: The open population raster.
         reprojecting: True when the coordinate systems differ and the caller
             allowed automatic reprojection.
+        antimeridian: How to handle wrapped geographic polygon boundaries.
 
     Returns:
         list[shapely.geometry.base.BaseGeometry]: One geometry per hazard
@@ -354,10 +370,26 @@ def _geometries_on_population_grid(
         >>> from shapely.geometry import box
         >>> hazard = gpd.GeoDataFrame(geometry=[box(0, 0, 1, 1)], crs="EPSG:3857")
         >>> with rasterio.open("population.tif") as raster:  # doctest: +SKIP
-        ...     _geometries_on_population_grid(hazard, raster, reprojecting=False)
+        ...     _geometries_on_population_grid(
+        ...         hazard, raster, reprojecting=False, antimeridian="error"
+        ...     )
     """
     geometries = list(hazard.geometry.to_numpy())
-    reject_wrapped_geometries(geometries, hazard_crs=hazard.crs)
+    if antimeridian == "error":
+        reject_wrapped_geometries(geometries, hazard_crs=hazard.crs)
+    else:
+        hazard_crs = as_crs(hazard.crs, parameter="hazard")
+        population_crs = as_crs(population.crs, parameter="population")
+        target_bounds = (
+            (population.bounds.left, population.bounds.right)
+            if hazard_crs == population_crs and population_crs.is_geographic
+            else None
+        )
+        geometries = split_wrapped_geometries(
+            geometries,
+            hazard_crs=hazard_crs,
+            target_longitude_bounds=target_bounds,
+        )
     if not reprojecting:
         return cast("list[BaseGeometry]", geometries)
     return transform_geometries(
@@ -878,14 +910,14 @@ def _wrapping_note(
     return ""
 
 
-def _reject_overlaps(hazard: gpd.GeoDataFrame) -> None:
+def _reject_overlaps(geometries: list[BaseGeometry]) -> None:
     """Reject feature pairs whose interiors share positive area."""
-    geometries = hazard.geometry.to_numpy()
-    pairs = shapely.STRtree(geometries).query(geometries, predicate="intersects")
+    values = np.asarray(geometries, dtype=object)
+    pairs = shapely.STRtree(values).query(values, predicate="intersects")
     for left, right in zip(pairs[0], pairs[1], strict=True):
         if left >= right:
             continue
-        intersection = shapely.intersection(geometries[left], geometries[right])
+        intersection = shapely.intersection(values[left], values[right])
         if shapely.area(intersection) > 0:
             raise ValueError(
                 "hazard vector contains overlapping polygons at row positions "

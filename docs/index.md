@@ -179,7 +179,7 @@ and the exact table-coordinate join below.
 ## `assign_population()` options
 
 `assign_population(hazard, population, *, cell_columns=("longitude",
-"latitude"), population_column="population", allow_overlaps=False,
+"latitude"), population_column="population", antimeridian="error", allow_overlaps=False,
 allow_reprojection=False, allow_partial_coverage=False,
 allow_missing_population_data=False, hazard_band=None,
 conservation_tolerance=None)` selects the matching behavior from the input
@@ -191,6 +191,7 @@ types.
 | `population` | A pandas table for table hazards. For maps and rasters, use a one-band population-count GeoTIFF, open Rasterio reader, or exact catalog selection. |
 | `cell_columns` | One table key column or a sequence of table key columns. It is used only for table assignment. The default is `longitude` and `latitude`. |
 | `population_column` | Name of the new output population column. It defaults to `population` and cannot overwrite an existing hazard column. |
+| `antimeridian` | Controls unsplit geographic vector boundaries that cross the map seam. The safe default, `"error"`, rejects them. `"split"` uses the shorter route temporarily for assignment and leaves returned geometry unchanged. It applies only to vector hazards. |
 | `allow_overlaps` | Allows overlapping vector polygons. It is `False` by default because adding independent overlapping totals would count shared areas more than once. It applies only to vector hazards. |
 | `allow_reprojection` | Allows automatic coordinate transformation. For vector hazards, geometry moves to the population CRS. For raster hazards, the population raster is warped to the hazard CRS and grid. It is `False` by default, so a mismatch raises an error instead. |
 | `allow_partial_coverage` | Allows a hazard that reaches outside the population raster's outer edge, and reports how much of it was covered. It is `False` by default, so a partly covered hazard raises an error instead. It applies to vector and raster hazards. |
@@ -257,9 +258,20 @@ shapes are handled the same way. In any geographic coordinate system, an
 unsplit boundary edge that jumps more than half a turn across the antimeridian
 raises an error instead of being read as the long way around the world. The
 half-turn limit is read from that coordinate system's angular unit, such as 180
-degrees or 200 grads. Split the polygon at the antimeridian; the package does
-not guess or rewrite the input. A shape that reaches outside the area the
-population projection can represent also raises an error.
+degrees or 200 grads. Split the polygon yourself, or explicitly request the
+shorter route:
+
+```python
+exposed = pe.assign_population(hazard, population, antimeridian="split")
+```
+
+The opt-in unwraps rings, splits them at the seam, and shifts the pieces into
+the population raster's longitude range before any requested reprojection.
+Polygons, multipolygons, and holes are supported. Already split geometry and
+safe unwrapped geometry are not changed. The normalized geometry is used only
+for overlap, coverage, data-support, and population calculations; the result
+keeps the input geometry. A shape that reaches outside the area the population
+projection can represent still raises an error.
 
 For rasters, automatic reprojection warps the population to the hazard grid:
 
@@ -362,10 +374,12 @@ physical-area share cannot be measured for a polygon that covers half or more
 of the Earth, or is too close to that limit to measure reliably; split it into
 smaller polygons first.
 
-Longitudes are never wrapped for you. A polygon drawn from 170 to -170 degrees
-must be split at the antimeridian or written as 170 to 190 degrees on a raster
-that supports that unwrapped range. On a raster that runs from -180 to 180, a
-170-to-190-degree polygon is half outside the raster and the error says so.
+Longitudes are not wrapped by default. A polygon drawn from 170 to -170 degrees
+must be split at the antimeridian, passed with `antimeridian="split"`, or
+written as 170 to 190 degrees on a raster that supports that unwrapped range.
+On a raster that runs from -180 to 180, a 170-to-190-degree polygon is half
+outside the raster and the error says so because it has no wrapped edge to
+signal a shorter-route interpretation.
 
 If the hazard also uses a different coordinate system, the coordinate-system
 error comes first. With `allow_reprojection=True`, coverage is measured on the

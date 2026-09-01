@@ -9,11 +9,12 @@ a caller explicitly opts in to automatic reprojection.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import shapely
 from pyproj import CRS, Transformer
+from shapely.affinity import translate
 
 from population_exposure._errors import CrsMismatchError
 
@@ -268,6 +269,327 @@ def reject_wrapped_geometries(
                     half_turn=half_turn,
                     error_type=ValueError,
                 )
+
+
+def split_wrapped_geometries(
+    geometries: Iterable[BaseGeometry],
+    *,
+    hazard_crs: object,
+    target_longitude_bounds: tuple[float, float] | None,
+) -> list[BaseGeometry]:
+    """Normalize wrapped polygon boundaries into one longitude domain.
+
+    Args:
+        geometries: ``Polygon`` or ``MultiPolygon`` hazard geometry.
+        hazard_crs: Geographic coordinate system of the hazard geometries.
+        target_longitude_bounds: Left and right bounds of a population raster in
+            the same coordinate system, or None to use a longitude window
+            centered on zero.
+
+    Returns:
+        list[shapely.geometry.base.BaseGeometry]: Assignment geometry in input
+        order. Geometry without a wrapped edge is returned unchanged.
+
+    Raises:
+        ValueError: If the CRS is not geographic or normalization cannot
+            preserve valid polygonal area.
+
+    Examples:
+        >>> from shapely.geometry import Polygon
+        >>> wrapped = Polygon([(170, -1), (-170, -1), (-170, 1), (170, 1), (170, -1)])
+        >>> normalized = split_wrapped_geometries(
+        ...     [wrapped],
+        ...     hazard_crs="EPSG:4326",
+        ...     target_longitude_bounds=(-180, 180),
+        ... )
+        >>> normalized[0].geom_type
+        'MultiPolygon'
+    """
+    crs = as_crs(hazard_crs, parameter="hazard")
+    half_turn = _longitude_half_turn(crs, parameter="hazard")
+    if half_turn is None:
+        raise ValueError(
+            'antimeridian="split" requires vector hazards in a geographic CRS.'
+        )
+    period = 2.0 * half_turn
+    domain_center = _longitude_domain_center(
+        target_longitude_bounds,
+        half_turn=half_turn,
+    )
+    normalized = [
+        _split_wrapped_geometry(
+            geometry,
+            half_turn=half_turn,
+            period=period,
+            domain_center=domain_center,
+        )
+        for geometry in geometries
+    ]
+    reject_wrapped_geometries(normalized, hazard_crs=crs)
+    return normalized
+
+
+def _longitude_domain_center(
+    bounds: tuple[float, float] | None,
+    *,
+    half_turn: float,
+) -> float:
+    """Return the center of the longitude window used for assignment.
+
+    Args:
+        bounds: Population raster longitude bounds, or None.
+        half_turn: Half a turn in source coordinate units.
+
+    Returns:
+        float: Center of a one-turn longitude window.
+
+    Raises:
+        ValueError: If explicit bounds are not finite and increasing.
+
+    Examples:
+        >>> _longitude_domain_center((-180.0, 180.0), half_turn=180.0)
+        0.0
+    """
+    if bounds is None:
+        return 0.0
+    left, right = bounds
+    if not math.isfinite(left) or not math.isfinite(right) or right <= left:
+        raise ValueError("population raster longitude bounds must be finite.")
+    if right - left > 2.0 * half_turn * (1.0 + 1e-12):
+        raise ValueError(
+            "population raster longitude span cannot exceed one full turn."
+        )
+    return 0.5 * (left + right)
+
+
+def _split_wrapped_geometry(
+    geometry: BaseGeometry,
+    *,
+    half_turn: float,
+    period: float,
+    domain_center: float,
+) -> BaseGeometry:
+    """Normalize one wrapped polygon or multipolygon.
+
+    Args:
+        geometry: Polygonal geometry in a geographic coordinate system.
+        half_turn: Half a turn in longitude coordinate units.
+        period: One full turn in longitude coordinate units.
+        domain_center: Center of the target longitude window.
+
+    Returns:
+        shapely.geometry.base.BaseGeometry: Polygonal assignment geometry.
+
+    Raises:
+        ValueError: If normalization produces invalid or changed area.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _split_wrapped_geometry(
+        ...     box(0, 0, 1, 1),
+        ...     half_turn=180,
+        ...     period=360,
+        ...     domain_center=0,
+        ... ).equals(box(0, 0, 1, 1))
+        True
+    """
+    if not _geometry_has_wrapped_edge(geometry, half_turn=half_turn):
+        return geometry
+    polygons = (
+        list(geometry.geoms)
+        if isinstance(geometry, shapely.MultiPolygon)
+        else [geometry]
+    )
+    if any(polygon.is_empty for polygon in polygons):
+        raise ValueError("hazard vector contains empty polygon parts.")
+    unwrapped = [
+        _unwrap_polygon(polygon, period=period)
+        for polygon in polygons
+        if isinstance(polygon, shapely.Polygon)
+    ]
+    if len(unwrapped) != len(polygons):  # pragma: no cover
+        raise ValueError("antimeridian normalization requires polygon geometry.")
+    source_area = math.fsum(polygon.area for polygon in unwrapped)
+    parts = [
+        part
+        for polygon in unwrapped
+        for part in _pieces_in_longitude_domain(
+            polygon,
+            period=period,
+            domain_center=domain_center,
+        )
+    ]
+    result = cast("BaseGeometry", shapely.union_all(parts))
+    if (
+        result.is_empty
+        or result.geom_type not in {"Polygon", "MultiPolygon"}
+        or not result.is_valid
+        or not math.isclose(result.area, source_area, rel_tol=1e-10, abs_tol=1e-12)
+    ):
+        raise ValueError(
+            "antimeridian normalization could not preserve valid polygon area; "
+            "split or repair the geometry before assignment."
+        )
+    return result
+
+
+def _geometry_has_wrapped_edge(
+    geometry: BaseGeometry,
+    *,
+    half_turn: float,
+) -> bool:
+    """Return whether any polygon ring jumps more than half a turn.
+
+    Args:
+        geometry: Polygon or multipolygon geometry.
+        half_turn: Half a turn in longitude coordinate units.
+
+    Returns:
+        bool: True when any neighboring longitude pair crosses the seam.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> _geometry_has_wrapped_edge(box(0, 0, 1, 1), half_turn=180)
+        False
+    """
+    polygons = (
+        geometry.geoms if isinstance(geometry, shapely.MultiPolygon) else [geometry]
+    )
+    limit = math.nextafter(half_turn, math.inf)
+    for polygon in polygons:
+        rings = [polygon.exterior, *polygon.interiors]
+        if any(
+            (np.abs(np.diff(np.asarray(ring.coords, dtype=float)[:, 0])) > limit).any()
+            for ring in rings
+        ):
+            return True
+    return False
+
+
+def _unwrap_polygon(
+    polygon: shapely.Polygon,
+    *,
+    period: float,
+) -> shapely.Polygon:
+    """Return a polygon whose neighboring longitudes take the shorter route.
+
+    Args:
+        polygon: Polygon with one or more wrapped rings.
+        period: One full turn in longitude coordinate units.
+
+    Returns:
+        shapely.Polygon: Unwrapped polygon, including aligned holes.
+
+    Examples:
+        >>> from shapely.geometry import Polygon
+        >>> polygon = Polygon([(170, 0), (-170, 0), (-170, 1), (170, 0)])
+        >>> _unwrap_polygon(polygon, period=360).bounds
+        (170.0, 0.0, 190.0, 1.0)
+    """
+    shell = _unwrap_ring(
+        np.asarray(polygon.exterior.coords, dtype=float), period=period
+    )
+    shell_center = 0.5 * (float(shell[:, 0].min()) + float(shell[:, 0].max()))
+    holes = []
+    for interior in polygon.interiors:
+        hole = _unwrap_ring(np.asarray(interior.coords, dtype=float), period=period)
+        hole_center = 0.5 * (float(hole[:, 0].min()) + float(hole[:, 0].max()))
+        hole[:, 0] += round((shell_center - hole_center) / period) * period
+        holes.append(hole)
+    result = shapely.Polygon(shell, holes)
+    if not result.is_valid:
+        raise ValueError(
+            "antimeridian normalization could not preserve polygon rings; "
+            "split or repair the geometry before assignment."
+        )
+    return result
+
+
+def _unwrap_ring(points: np.ndarray, *, period: float) -> np.ndarray:
+    """Return a ring with each longitude nearest to its predecessor.
+
+    Args:
+        points: Closed ring coordinates.
+        period: One full turn in longitude coordinate units.
+
+    Returns:
+        numpy.ndarray: A copy of the coordinates with unwrapped longitudes.
+
+    Examples:
+        >>> ring = np.array([[170.0, 0.0], [-170.0, 0.0], [170.0, 0.0]])
+        >>> _unwrap_ring(ring, period=360)[:, 0]
+        array([170., 190., 170.])
+    """
+    result = points.copy()
+    for index in range(1, len(result)):
+        previous = result[index - 1, 0]
+        result[index, 0] += round((previous - result[index, 0]) / period) * period
+    return result
+
+
+def _pieces_in_longitude_domain(
+    polygon: shapely.Polygon,
+    *,
+    period: float,
+    domain_center: float,
+) -> list[shapely.Polygon]:
+    """Split and shift a polygon into one longitude window.
+
+    Args:
+        polygon: Unwrapped polygon.
+        period: One full turn in longitude coordinate units.
+        domain_center: Center of the target longitude window.
+
+    Returns:
+        list[shapely.Polygon]: Polygon pieces shifted into the target window.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> len(
+        ...     _pieces_in_longitude_domain(
+        ...         box(170, 0, 190, 1), period=360, domain_center=0
+        ...     )
+        ... )
+        2
+    """
+    domain_left = domain_center - 0.5 * period
+    min_x, min_y, max_x, max_y = polygon.bounds
+    first = math.floor((min_x - domain_left) / period)
+    last = math.floor((max_x - domain_left) / period)
+    padding = max(1.0, max_y - min_y) * 1e-9
+    parts: list[shapely.Polygon] = []
+    for offset in range(first, last + 1):
+        left = domain_left + offset * period
+        strip = shapely.box(left, min_y - padding, left + period, max_y + padding)
+        clipped = shapely.intersection(polygon, strip)
+        shifted = translate(clipped, xoff=-offset * period)
+        parts.extend(_polygonal_parts(shifted))
+    return parts
+
+
+def _polygonal_parts(geometry: BaseGeometry) -> list[shapely.Polygon]:
+    """Return all positive-area polygon parts from a geometry.
+
+    Args:
+        geometry: Geometry produced by clipping a polygon.
+
+    Returns:
+        list[shapely.Polygon]: Polygon components, excluding lines and points.
+
+    Examples:
+        >>> from shapely.geometry import box
+        >>> len(_polygonal_parts(box(0, 0, 1, 1)))
+        1
+    """
+    if isinstance(geometry, shapely.Polygon):
+        return [geometry] if geometry.area > 0 else []
+    if isinstance(geometry, shapely.MultiPolygon):
+        return [part for part in geometry.geoms if part.area > 0]
+    if isinstance(geometry, shapely.GeometryCollection):
+        return [
+            part for component in geometry.geoms for part in _polygonal_parts(component)
+        ]
+    return []
 
 
 def _longitude_half_turn(crs: CRS, *, parameter: str) -> float | None:
@@ -596,5 +918,6 @@ def _reject_wrapped(
         raise error_type(
             "hazard geometry has an unsplit boundary edge crossing the "
             "antimeridian, so it would wrap the long way around the world. "
-            "Split the geometry at the antimeridian before assignment."
+            "Split the geometry at the antimeridian before assignment, or pass "
+            'antimeridian="split" to use the shorter route temporarily.'
         )
