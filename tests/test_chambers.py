@@ -66,6 +66,9 @@ def test_derives_one_year_from_the_published_hdf5_layout(tmp_path: Path) -> None
     _write_source(source)
     with h5py.File(source, "r+") as file:
         file["demographic_totals"][0, 720, :, 69] = 2
+        file["demographic_totals"][0, 976, :, 69] = 3
+        file["demographic_totals"][0, 1_280, :, 69] = 5
+        file["demographic_totals"][0, 0, :, 69] = 4
 
     _chambers.derive_chambers_year(source, output, 2019)
 
@@ -75,7 +78,9 @@ def test_derives_one_year_from_the_published_hdf5_layout(tmp_path: Path) -> None
         assert dataset.tags(1)["year"] == "2019"
         assert dataset.tags(1)["processing"] == "sum of 14 five-year age bands"
         assert float(dataset.read(1, window=Window(0, 0, 1, 1))[0, 0]) == 28.0
-        assert float(dataset.read(1, window=Window(720, 0, 1, 1))[0, 0]) == 14.0
+        assert float(dataset.read(1, window=Window(256, 0, 1, 1))[0, 0]) == 42.0
+        assert float(dataset.read(1, window=Window(560, 0, 1, 1))[0, 0]) == 70.0
+        assert float(dataset.read(1, window=Window(720, 0, 1, 1))[0, 0]) == 56.0
 
 
 @pytest.mark.parametrize(

@@ -54,7 +54,7 @@ def derive_chambers_year(source_path: Path, output_path: Path, year: int) -> Non
 
 
 def _derive_from_file(source: h5py.File, output_path: Path, year: int) -> None:
-    """Sum one published year's demographic bands in bounded row windows.
+    """Sum one published year's demographic bands in bounded grid windows.
 
     Args:
         source: Open HDF5 file containing the published Chambers datasets.
@@ -212,10 +212,33 @@ def _window_total(
     """
     row_start = int(window.row_off)
     row_stop = row_start + int(window.height)
+    column_start = (int(window.col_off) + _SOURCE_SHAPE[1] // 2) % _SOURCE_SHAPE[1]
+    column_stop = column_start + int(window.width)
     values = np.asarray(
-        source[row_start:row_stop, :, :, year_index],
+        source[
+            row_start:row_stop,
+            column_start : min(column_stop, _SOURCE_SHAPE[1]),
+            :,
+            year_index,
+        ],
         dtype=np.float64,
     )
+    if column_stop > _SOURCE_SHAPE[1]:
+        values = np.concatenate(
+            (
+                values,
+                np.asarray(
+                    source[
+                        row_start:row_stop,
+                        : column_stop - _SOURCE_SHAPE[1],
+                        :,
+                        year_index,
+                    ],
+                    dtype=np.float64,
+                ),
+            ),
+            axis=1,
+        )
     valid = ~np.isnan(values)
     finite = values[valid]
     if not np.isfinite(finite).all() or (finite < 0).any():
@@ -224,7 +247,7 @@ def _window_total(
         )
     total = np.nansum(values, axis=2, dtype=np.float64)
     total[~valid.any(axis=2)] = np.nan
-    return np.roll(total, -_SOURCE_SHAPE[1] // 2, axis=1)
+    return total
 
 
 def _windows() -> tuple[Window, ...]:
