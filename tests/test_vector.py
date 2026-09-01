@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import rasterio
+import shapely
 from exactextract import exact_extract
 from geopandas.testing import assert_geodataframe_equal
 from rasterio.transform import from_bounds, from_origin
@@ -215,6 +216,221 @@ def test_same_crs_unsplit_antimeridian_polygon_is_rejected(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize(
+    ("bounds", "expected"),
+    [
+        (
+            (-180, -10, 180, 10),
+            MultiPolygon([box(170, -10, 180, 10), box(-180, -10, -170, 10)]),
+        ),
+        ((0, -10, 360, 10), box(170, -10, 190, 10)),
+    ],
+    ids=["minus-180-to-180", "zero-to-360"],
+)
+def test_antimeridian_split_matches_explicit_geometry(
+    tmp_path: Path,
+    bounds: tuple[int, int, int, int],
+    expected: Polygon | MultiPolygon,
+) -> None:
+    """Assign a wrapped polygon as the equivalent explicit short-route pieces.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+        bounds: Population raster bounds.
+        expected: Explicit seam-safe geometry.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k split_matches``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.arange(1, 9).reshape(2, 4),
+        crs="EPSG:4326",
+        transform=from_bounds(*bounds, 4, 2),
+    )
+    wrapped = Polygon([(170, -10), (-170, -10), (-170, 10), (170, 10), (170, -10)])
+    hazard = gpd.GeoDataFrame(
+        {"name": ["wrapped"]},
+        geometry=[wrapped],
+        crs="EPSG:4326",
+        index=[7],
+    )
+    original = hazard.copy(deep=True)
+
+    automatic = assign_population(hazard, population, antimeridian="split")
+    explicit = assign_population(
+        gpd.GeoDataFrame(geometry=[expected], crs=hazard.crs),
+        population,
+    )
+
+    assert automatic["population"].item() == pytest.approx(
+        explicit["population"].item()
+    )
+    assert automatic.index.tolist() == [7]
+    assert automatic["name"].tolist() == ["wrapped"]
+    assert_geodataframe_equal(
+        automatic.drop(
+            columns=[
+                "population",
+                "population_data_fraction",
+                "population_data_complete",
+            ]
+        ),
+        original,
+    )
+    assert_geodataframe_equal(hazard, original)
+
+
+def test_antimeridian_split_preserves_holes_and_multipart_features(
+    tmp_path: Path,
+) -> None:
+    """Normalize a wrapped polygon hole while retaining another polygon part.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k split_preserves_holes``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((4, 8)),
+        crs="EPSG:4326",
+        transform=from_bounds(-180, -20, 180, 20, 8, 4),
+    )
+    wrapped_with_hole = Polygon(
+        [(170, -10), (-170, -10), (-170, 10), (170, 10), (170, -10)],
+        [[(175, -5), (-175, -5), (-175, 5), (175, 5), (175, -5)]],
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[MultiPolygon([wrapped_with_hole, box(0, -2, 2, 2)])],
+        crs="EPSG:4326",
+    )
+    explicit = gpd.GeoDataFrame(
+        geometry=[
+            shapely.union_all(
+                [
+                    shapely.difference(
+                        MultiPolygon(
+                            [box(170, -10, 180, 10), box(-180, -10, -170, 10)]
+                        ),
+                        MultiPolygon([box(175, -5, 180, 5), box(-180, -5, -175, 5)]),
+                    ),
+                    box(0, -2, 2, 2),
+                ]
+            )
+        ],
+        crs=hazard.crs,
+    )
+
+    automatic = assign_population(hazard, population, antimeridian="split")
+    expected = assign_population(explicit, population)
+
+    assert automatic["population"].item() == pytest.approx(
+        expected["population"].item()
+    )
+
+
+def test_antimeridian_split_uses_grad_half_turn(tmp_path: Path) -> None:
+    """Derive the split seam from a CRS measured in grads.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k split_uses_grad``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:4807",
+        transform=from_bounds(-200, -10, 200, 10, 4, 2),
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[
+            Polygon([(190, -10), (-190, -10), (-190, 10), (190, 10), (190, -10)])
+        ],
+        crs="EPSG:4807",
+    )
+
+    result = assign_population(hazard, population, antimeridian="split")
+
+    assert result["population"].item() == pytest.approx(8 * (20 / 400))
+
+
+def test_antimeridian_split_rejects_unknown_or_non_vector_use(tmp_path: Path) -> None:
+    """Reject unsupported modes and vector-only use on other hazard types.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k split_rejects``.
+    """
+    population = write_population(tmp_path / "population.tif")
+    projected = gpd.GeoDataFrame(geometry=[box(0, 0, 2, 2)], crs="EPSG:3857")
+    table_hazard = pd.DataFrame({"cell": ["A"]})
+    table_population = pd.DataFrame({"cell": ["A"], "population": [1.0]})
+
+    with pytest.raises(ValueError, match="must be 'error' or 'split'"):
+        assign_population(projected, population, antimeridian="wrap")
+    with pytest.raises(ValueError, match="requires vector hazards in a geographic CRS"):
+        assign_population(projected, population, antimeridian="split")
+    with pytest.raises(ValueError, match="applies only to vector hazards"):
+        assign_population(
+            table_hazard,
+            table_population,
+            cell_columns="cell",
+            antimeridian="split",
+        )
+    with pytest.raises(ValueError, match="applies only to vector hazards"):
+        assign_population(population, population, antimeridian="split")
+
+
+def test_antimeridian_overlap_check_uses_normalized_geometry(tmp_path: Path) -> None:
+    """Avoid a false overlap from the wrapped polygon's planar interpretation.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k overlap_check_uses_normalized``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:4326",
+        transform=from_bounds(-180, -10, 180, 10, 4, 2),
+    )
+    hazard = gpd.GeoDataFrame(
+        geometry=[
+            Polygon([(170, -10), (-170, -10), (-170, 10), (170, 10), (170, -10)]),
+            box(-5, -5, 5, 5),
+        ],
+        crs="EPSG:4326",
+    )
+
+    result = assign_population(hazard, population, antimeridian="split")
+
+    assert len(result) == 2
+    assert result["population"].gt(0).all()
+
+
+@pytest.mark.parametrize(
     ("bounds", "geometry"),
     [
         (
@@ -252,8 +468,10 @@ def test_valid_antimeridian_representations_are_preserved(
     hazard = gpd.GeoDataFrame(geometry=[geometry], crs="EPSG:4326")
 
     result = assign_population(hazard, population)
+    opted_in = assign_population(hazard, population, antimeridian="split")
 
     assert result["population"].item() == pytest.approx(8 * (20 / 360))
+    assert opted_in["population"].item() == pytest.approx(result["population"].item())
 
 
 def test_wrapped_geographic_source_is_rejected_before_reprojection(
@@ -293,6 +511,49 @@ def test_wrapped_geographic_source_is_rejected_before_reprojection(
 
     assert not isinstance(caught.value, pe.CrsMismatchError)
     transform.assert_not_called()
+
+
+def test_antimeridian_split_happens_before_reprojection(tmp_path: Path) -> None:
+    """Match explicit seam-safe geometry when reprojection is also requested.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k split_happens_before``.
+    """
+    bounds = transform_bounds("EPSG:4326", "EPSG:3857", -180, -10, 180, 10)
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.arange(1, 9).reshape(2, 4),
+        crs="EPSG:3857",
+        transform=from_bounds(*bounds, 4, 2),
+    )
+    wrapped = gpd.GeoDataFrame(
+        geometry=[
+            Polygon([(170, -10), (-170, -10), (-170, 10), (170, 10), (170, -10)])
+        ],
+        crs="EPSG:4326",
+    )
+    explicit = gpd.GeoDataFrame(
+        geometry=[MultiPolygon([box(170, -10, 180, 10), box(-180, -10, -170, 10)])],
+        crs=wrapped.crs,
+    )
+
+    automatic = assign_population(
+        wrapped,
+        population,
+        antimeridian="split",
+        allow_reprojection=True,
+    )
+    expected = assign_population(explicit, population, allow_reprojection=True)
+
+    assert automatic["population"].item() == pytest.approx(
+        expected["population"].item()
+    )
 
 
 @pytest.mark.parametrize("right", [190, 200], ids=["under-half-turn", "half-turn"])

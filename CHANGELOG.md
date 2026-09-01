@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Add `antimeridian="split"` as an explicit vector-assignment opt-in that
+  interprets wrapped geographic polygon boundaries as the shorter route,
+  normalizes temporary assignment geometry to the population raster's longitude
+  range, and leaves returned geometry unchanged. The default remains `"error"`.
+
 ## [0.1.0rc1] - 2026-08-31
 
 ### Changed
