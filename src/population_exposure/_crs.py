@@ -283,7 +283,8 @@ def split_wrapped_geometries(
         geometries: ``Polygon`` or ``MultiPolygon`` hazard geometry.
         hazard_crs: Geographic coordinate system of the hazard geometries.
         target_longitude_bounds: Left and right bounds of a population raster in
-            the same coordinate system, or None to use the CRS's usual domain.
+            the same coordinate system, or None to use a longitude window
+            centered on zero.
 
     Returns:
         list[shapely.geometry.base.BaseGeometry]: Assignment geometry in input
@@ -399,6 +400,8 @@ def _split_wrapped_geometry(
         if isinstance(geometry, shapely.MultiPolygon)
         else [geometry]
     )
+    if any(polygon.is_empty for polygon in polygons):
+        raise ValueError("hazard vector contains empty polygon parts.")
     unwrapped = [
         _unwrap_polygon(polygon, period=period)
         for polygon in polygons

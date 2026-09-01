@@ -398,6 +398,33 @@ def test_antimeridian_split_rejects_unknown_or_non_vector_use(tmp_path: Path) ->
         assign_population(population, population, antimeridian="split")
 
 
+def test_antimeridian_split_rejects_empty_multipolygon_parts(tmp_path: Path) -> None:
+    """Reject an empty part with the same clear geometry error as empty input.
+
+    Args:
+        tmp_path: Temporary directory supplied by pytest.
+
+    Returns:
+        None.
+
+    Examples:
+        Run with ``pytest tests/test_vector.py -k empty_multipolygon_parts``.
+    """
+    population = write_population(
+        tmp_path / "population.tif",
+        values=np.ones((2, 4)),
+        crs="EPSG:4326",
+        transform=from_bounds(-180, -10, 180, 10, 4, 2),
+    )
+    geometry = shapely.from_wkt(
+        "MULTIPOLYGON (EMPTY, ((170 -10, -170 -10, -170 10, 170 10, 170 -10)))"
+    )
+    hazard = gpd.GeoDataFrame(geometry=[geometry], crs="EPSG:4326")
+
+    with pytest.raises(ValueError, match="empty polygon parts"):
+        assign_population(hazard, population, antimeridian="split")
+
+
 def test_antimeridian_overlap_check_uses_normalized_geometry(tmp_path: Path) -> None:
     """Avoid a false overlap from the wrapped polygon's planar interpretation.
 

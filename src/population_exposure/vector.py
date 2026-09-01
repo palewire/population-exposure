@@ -177,7 +177,9 @@ def assign_vector_population(
             reprojecting=reprojecting,
             antimeridian=antimeridian,
         )
-        if not all(geometry.is_valid for geometry in geometries):
+        if (antimeridian == "split" or reprojecting) and not shapely.is_valid(
+            np.asarray(geometries, dtype=object)
+        ).all():
             raise ValueError("hazard vector contains invalid geometry.")
         if not allow_overlaps:
             _reject_overlaps(geometries)
