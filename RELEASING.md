@@ -18,7 +18,7 @@ These steps are safe to prepare in a branch or Git worktree:
 2. Review `CHANGELOG.md` and move the relevant `Unreleased` entries into a
    dated version section.
 3. Set the intended candidate version in `pyproject.toml`, such as
-   `0.1.0rc1`.
+   `0.1.0rc2`.
 4. Open and merge a reviewed release-candidate pull request.
 
 ## Actions requiring explicit human approval
@@ -29,24 +29,24 @@ Do not perform any of the following without explicit human approval:
 2. Run the **Publish package** workflow to publish to TestPyPI.
 3. Publish to PyPI or create a GitHub Release.
 
-### 0.1.0rc1 TestPyPI flow
+### 0.1.0rc2 TestPyPI flow
 
-After approval, tag and push the merged candidate as `v0.1.0rc1`, then use
+After approval, tag and push the merged candidate as `v0.1.0rc2`, then use
 **Actions > Publish package > Run workflow** with the `testpypi` target and
-the pushed `v0.1.0rc1` ref. The workflow builds and publishes that exact ref
+the pushed `v0.1.0rc2` ref. The workflow builds and publishes that exact ref
 to TestPyPI.
 
 Install the candidate by pinning its full version, rather than requesting an
 unqualified package name:
 
 ```sh
-uv venv /tmp/population-exposure-0.1.0rc1
+uv venv /tmp/population-exposure-0.1.0rc2
 uv pip install \
-  --python /tmp/population-exposure-0.1.0rc1/bin/python \
+  --python /tmp/population-exposure-0.1.0rc2/bin/python \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple/ \
-  "population-exposure==0.1.0rc1"
+  "population-exposure==0.1.0rc2"
 ```
 
-TestPyPI already has `population-exposure==0.1.0`. The `==0.1.0rc1` pin
-ensures the candidate is installed instead of that existing release.
+TestPyPI already has earlier `population-exposure` releases. The `==0.1.0rc2`
+pin ensures the candidate is installed instead of an existing release.
