@@ -135,5 +135,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Correct the catalogued grid bounds and nodata values for the official
   WorldPop 1 km mosaics by selected year.
 
-[Unreleased]: https://github.com/palewire/population-exposure/compare/v0.1.0rc1...HEAD
+[Unreleased]: https://github.com/palewire/population-exposure/commits/main
 [0.1.0rc1]: https://github.com/palewire/population-exposure/tree/v0.1.0rc1
