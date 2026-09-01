@@ -47,6 +47,8 @@ def derive_chambers_year(source_path: Path, output_path: Path, year: int) -> Non
     try:
         with h5py.File(source_path, "r") as source:
             _derive_from_file(source, output_path, year)
+    except FileNotFoundError:
+        raise
     except OSError as error:
         raise ValueError(
             "Chambers source is not the expected NetCDF-4 demographic_totals cube."
@@ -115,7 +117,7 @@ def _derive_from_file(source: h5py.File, output_path: Path, year: int) -> None:
             units="population count per cell",
             year=str(year),
             source_variable=_VARIABLE,
-            processing="sum of 14 five-year age bands",
+            processing="sum of 14 age bands",
         )
 
 

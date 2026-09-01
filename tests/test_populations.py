@@ -714,7 +714,7 @@ def test_chambers_reuses_one_source_for_multiple_years_and_offline_derivation(
     assert derived_years == [2019, 2020]
     receipt = json.loads(second.with_suffix(".tif.json").read_text())
     assert receipt["source_file_sha256"] == sha256_file(raw)
-    assert "21 five-year age bands" in receipt["processing_note"]
+    assert "14 age bands" in receipt["processing_note"]
 
 
 def test_catalog_selection_and_custom_path_assignment_attrs(

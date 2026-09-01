@@ -448,7 +448,7 @@ def _download_chambers(
         source_file_sha256=source_sha256,
         processing_note=(
             "Derived from the one cached NetCDF-4 source by summing the selected "
-            "year's 21 five-year age bands in bounded windows."
+            "year's 14 age bands in bounded windows."
         ),
     )
     return raster_path

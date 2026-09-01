@@ -76,7 +76,7 @@ def test_derives_one_year_from_the_published_hdf5_layout(tmp_path: Path) -> None
         assert dataset.shape == (720, 1_440)
         assert dataset.bounds == (-180.0, -90.0, 180.0, 90.0)
         assert dataset.tags(1)["year"] == "2019"
-        assert dataset.tags(1)["processing"] == "sum of 14 five-year age bands"
+        assert dataset.tags(1)["processing"] == "sum of 14 age bands"
         assert float(dataset.read(1, window=Window(0, 0, 1, 1))[0, 0]) == 28.0
         assert float(dataset.read(1, window=Window(256, 0, 1, 1))[0, 0]) == 42.0
         assert float(dataset.read(1, window=Window(560, 0, 1, 1))[0, 0]) == 70.0
@@ -124,3 +124,12 @@ def test_rejects_non_hdf5_source(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="expected NetCDF-4"):
         _chambers.derive_chambers_year(source, tmp_path / "output.tif", 2019)
+
+
+def test_missing_source_path_is_not_masked(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        _chambers.derive_chambers_year(
+            tmp_path / "missing.nc",
+            tmp_path / "output.tif",
+            2019,
+        )
