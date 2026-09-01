@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0rc2] - 2026-09-01
+
 ### Added
 
 - Add `antimeridian="split"` as an explicit vector-assignment opt-in that
@@ -142,5 +144,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Correct the catalogued grid bounds and nodata values for the official
   WorldPop 1 km mosaics by selected year.
 
-[Unreleased]: https://github.com/palewire/population-exposure/commits/main
+[Unreleased]: https://github.com/palewire/population-exposure/compare/v0.1.0rc2...HEAD
+[0.1.0rc2]: https://github.com/palewire/population-exposure/compare/v0.1.0rc1...v0.1.0rc2
 [0.1.0rc1]: https://github.com/palewire/population-exposure/tree/v0.1.0rc1
