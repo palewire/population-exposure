@@ -10,7 +10,11 @@ import rasterio
 
 from population_exposure import populations
 from population_exposure.populations import _api
-from population_exposure.populations._cache import cache_entry, verified_receipt
+from population_exposure.populations._cache import (
+    _json_safe,
+    cache_entry,
+    verified_receipt,
+)
 from population_exposure.populations._http import download_file
 from population_exposure.populations._raster import validate_catalog_raster
 from population_exposure.populations._sources import SOURCES
@@ -80,7 +84,7 @@ def test_official_provider_download_is_validated_receipted_and_reused_offline(
     )
     assert receipt["official_url"] == selected.official_url
     assert receipt["local_size_bytes"] == downloaded.stat().st_size
-    assert receipt["observed"] == observed
+    assert receipt["observed"] == _json_safe(observed)
 
     if source_id == GPW:
         _assert_gpw_parity(downloaded, selection, token, tmp_path)

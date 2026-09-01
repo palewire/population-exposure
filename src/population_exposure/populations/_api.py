@@ -412,7 +412,7 @@ def _download_chambers(
                         "format": "NetCDF-4",
                         "variable": "demographic_totals",
                         "year_coverage": "1950-2020",
-                        "age_bands": 21,
+                        "age_bands": 14,
                     },
                     processing_note=(
                         "Downloaded once from immutable Zenodo record 6011021 for "
@@ -448,7 +448,7 @@ def _download_chambers(
         source_file_sha256=source_sha256,
         processing_note=(
             "Derived from the one cached NetCDF-4 source by summing the selected "
-            "year's 21 five-year age bands in bounded windows."
+            "year's 14 age bands in bounded windows."
         ),
     )
     return raster_path
