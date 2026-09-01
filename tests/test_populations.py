@@ -715,6 +715,12 @@ def test_chambers_reuses_one_source_for_multiple_years_and_offline_derivation(
     receipt = json.loads(second.with_suffix(".tif.json").read_text())
     assert receipt["source_file_sha256"] == sha256_file(raw)
     assert "14 age bands" in receipt["processing_note"]
+    source_receipt = (
+        _cache.source_cache_directory(cache, _sources.SOURCES["chambers-hybrid"])
+        / "source"
+        / f"{_api._CHAMBERS_FILENAME}.json"
+    )
+    assert json.loads(source_receipt.read_text())["observed"]["age_bands"] == 14
 
 
 def test_catalog_selection_and_custom_path_assignment_attrs(

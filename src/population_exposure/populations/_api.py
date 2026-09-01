@@ -412,7 +412,7 @@ def _download_chambers(
                         "format": "NetCDF-4",
                         "variable": "demographic_totals",
                         "year_coverage": "1950-2020",
-                        "age_bands": 21,
+                        "age_bands": 14,
                     },
                     processing_note=(
                         "Downloaded once from immutable Zenodo record 6011021 for "
