@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0rc1] - 2026-08-31
+
 ### Changed
 
 - Report missing and partial population support explicitly. Coverage, which
@@ -134,3 +136,4 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   WorldPop 1 km mosaics by selected year.
 
 [Unreleased]: https://github.com/palewire/population-exposure/commits/main
+[0.1.0rc1]: https://github.com/palewire/population-exposure/tree/v0.1.0rc1
