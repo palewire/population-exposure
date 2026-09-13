@@ -10,34 +10,6 @@ pip install population-exposure
 
 Python 3.11 or newer is required.
 
-## What the result estimates
-
-`assign_population()` returns the **estimated population represented by the
-selected source and reference year**. Spatial hazards use coverage-weighted
-allocation; table hazards use exact key joins. It does not identify observed
-people, exact households, or who was present during an event. The result
-inherits the source's meaning: for example, a residential baseline estimates
-residents represented by that source and year, while LandScan represents
-average 24-hour ambient presence.
-
-For vector hazards, a population cell crossing a polygon boundary contributes
-according to the share of the cell area covered by that polygon. For raster
-hazards, population counts are moved to the hazard grid with coverage-weighted
-sum resampling. This assumes population is distributed within a cell according
-to covered area. A finer output grid only redistributes the source counts; it
-does not add demographic detail. Source resolution, modeling choices, and the
-scale of the hazard limit local or individual-level inference, and aggregate
-exposure should not be used to infer household or individual outcomes.
-
-Raster conservation is a numerical check on the alignment calculation, not
-validation of the population source and not an uncertainty interval. A small
-conservation difference does not establish source accuracy.
-
-A source can also have nothing to say about a place. Every result reports how
-much of the hazard the population grid reached over and how much of it the grid
-held real values for, so a total is never quietly built on missing data. The
-"Two questions about support" section below explains both.
-
 ## Population registry
 
 The built-in registry provides curated population-count source metadata. Select
